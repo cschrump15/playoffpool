@@ -49,6 +49,7 @@ export default function PlayoffPool() {
   const [userPicks, setUserPicks] = useState({})
   const [pendingPicks, setPendingPicks] = useState({})
   const [participants, setParticipants] = useState([])
+  const [allPicks, setAllPicks] = useState([])
   const [loading, setLoading] = useState(false)
 
   function showToast(msg) {
@@ -101,14 +102,15 @@ export default function PlayoffPool() {
 
   async function loadParticipants() {
     const { data: users } = await supabase.from('users').select('*')
-    const { data: allPicks } = await supabase.from('picks').select('*')
+    const { data: picks } = await supabase.from('picks').select('*')
     const { data: allSeries } = await supabase.from('series').select('*')
-    if (users && allPicks && allSeries) {
+    if (users && picks && allSeries) {
+      setAllPicks(picks)
       const scored = users.map(u => {
         let nhlTotal = 0, nbaTotal = 0
         allSeries.forEach(s => {
           if (!s.result_winner) return
-          const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id)
+          const pick = picks.find(p => p.user_id === u.id && p.series_id === s.id)
           if (!pick) return
           const pts = calcPoints(s.round, pick.picked_winner === s.result_winner, s.result_games, pick.picked_games)
           if (s.league === 'NHL') nhlTotal += pts
@@ -188,6 +190,7 @@ export default function PlayoffPool() {
             <div className="nav-tabs">
               <button className={`nav-tab ${page === 'picks' ? 'active' : ''}`} onClick={() => setPage('picks')}>My Picks</button>
               <button className={`nav-tab ${page === 'standings' ? 'active' : ''}`} onClick={() => setPage('standings')}>Standings</button>
+              <button className={`nav-tab ${page === 'distributions' ? 'active' : ''}`} onClick={() => setPage('distributions')}>Pick Distributions</button>
               {user.is_admin && <button className={`nav-tab ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>Admin</button>}
             </div>
             <div className="nav-user">
@@ -198,6 +201,7 @@ export default function PlayoffPool() {
           <main>
             {page === 'picks' && <PicksPage series={series} userPicks={userPicks} pendingPicks={pendingPicks} setPendingPicks={setPendingPicks} submitPick={submitPick} />}
             {page === 'standings' && <StandingsPage participants={participants} />}
+            {page === 'distributions' && <DistributionsPage series={series} allPicks={allPicks} participants={participants} />}
             {page === 'admin' && user.is_admin && <AdminPage series={series} toggleLock={toggleLock} enterResult={enterResult} participants={participants} showToast={showToast} />}
           </main>
         </div>
@@ -265,6 +269,7 @@ function LoginScreen({ onLogin, onRegister, loading }) {
     </div>
   )
 }
+
 function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPick }) {
   const [league, setLeague] = useState('NHL')
   const currentSeries = series[league]
@@ -311,7 +316,6 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
           return sum + calcPoints(s.round, pick.winner === s.result_winner, s.result_games, pick.games)
         }, 0)
         const pickedCount = roundSeries.filter(s => userPicks[s.id]).length
-
         return (
           <div key={r} style={{marginBottom: 16}}>
             <div
@@ -396,6 +400,74 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
   )
 }
 
+function DistributionsPage({ series, allPicks, participants }) {
+  const [league, setLeague] = useState('NHL')
+  const currentSeries = series[league]
+  const total = participants.length
+
+  return (
+    <div className="page">
+      <div className="page-title">Pick Distributions</div>
+      <div className="page-sub">See how the pool is split on every series — picks only visible after series locks.</div>
+      <div className="league-tabs">
+        <button className={`league-tab ${league === 'NHL' ? 'active-nhl' : ''}`} onClick={() => setLeague('NHL')}>🏒 NHL Playoffs</button>
+        <button className={`league-tab ${league === 'NBA' ? 'active-nba' : ''}`} onClick={() => setLeague('NBA')}>🏀 NBA Playoffs</button>
+      </div>
+      {currentSeries.length === 0 && (
+        <div style={{color: 'rgba(255,255,255,0.4)', marginTop: 40, textAlign: 'center'}}>No series added yet.</div>
+      )}
+      <div className="series-grid">
+        {currentSeries.map(s => {
+          const seriesPicks = allPicks.filter(p => p.series_id === s.id)
+          const homePicks = seriesPicks.filter(p => p.picked_winner === s.home_team).length
+          const awayPicks = seriesPicks.filter(p => p.picked_winner === s.away_team).length
+          const totalPicks = seriesPicks.length
+          const homePct = totalPicks > 0 ? Math.round((homePicks / totalPicks) * 100) : 50
+          const awayPct = totalPicks > 0 ? Math.round((awayPicks / totalPicks) * 100) : 50
+
+          return (
+            <div key={s.id} className="series-card">
+              <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 12, letterSpacing: 1}}>
+                ROUND {s.round} · {totalPicks}/{total} picks submitted
+              </div>
+              {!s.locked ? (
+                <div style={{textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 13, padding: '20px 0'}}>
+                  🔒 Distributions visible after series locks
+                </div>
+              ) : (
+                <>
+                  <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 8}}>
+                    <div style={{textAlign: 'center', flex: 1}}>
+                      <div style={{fontSize: 24, marginBottom: 4}}>{TEAM_EMOJI[s.home_team] || '🏒'}</div>
+                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2}}>{s.home_team}</div>
+                      <div style={{fontSize: 22, fontWeight: 700, color: '#60a5fa'}}>{homePct}%</div>
+                      <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{homePicks} picks</div>
+                    </div>
+                    <div style={{display: 'flex', alignItems: 'center', padding: '0 12px', color: 'rgba(255,255,255,0.2)', fontFamily: "'Bebas Neue',sans-serif", fontSize: 16}}>VS</div>
+                    <div style={{textAlign: 'center', flex: 1}}>
+                      <div style={{fontSize: 24, marginBottom: 4}}>{TEAM_EMOJI[s.away_team] || '🏒'}</div>
+                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2}}>{s.away_team}</div>
+                      <div style={{fontSize: 22, fontWeight: 700, color: '#60a5fa'}}>{awayPct}%</div>
+                      <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{awayPicks} picks</div>
+                    </div>
+                  </div>
+                  <div style={{height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 8}}>
+                    <div style={{height: '100%', width: `${homePct}%`, background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: 3, transition: 'width 0.5s ease'}} />
+                  </div>
+                  {s.result_winner && (
+                    <div style={{marginTop: 10, fontSize: 11, color: '#86efac', textAlign: 'center'}}>
+                      ✓ Result: <strong>{s.result_winner}</strong> in {s.result_games}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 function StandingsPage({ participants }) {
   const [view, setView] = useState('combined')
   const sorted = [...participants].sort((a, b) =>
