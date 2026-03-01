@@ -643,7 +643,7 @@ const css = `
   .field-input { width: 100%; padding: 12px 16px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
   .field-input:focus { border-color: rgba(59,130,246,0.5); }
   .pin-row { display: flex; gap: 10px; margin-bottom: 16px; }
-  .pin-input { flex: 1; aspect-ratio: 1; text-align: center; font-size: 22px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; }
+  .pin-input { flex: 1; aspect-ratio: 1; text-align: center; font-size: 22px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; } text-align: center; font-size: 22px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; }
   .pin-input:focus { border-color: rgba(59,130,246,0.5); }
   .btn-primary { width: 100%; padding: 14px; border-radius: 10px; background: #3b82f6; border: none; color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
   .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
