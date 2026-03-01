@@ -10,16 +10,29 @@ const supabase = createClient(
 const WINNER_PTS = [0, 4, 5, 6, 8]
 const GAMES_BONUS = [0, 1, 1, 2, 3]
 
-function calcPoints(round, correctWinner, actualGames, pickedGames) {
-  if (!correctWinner) {
-    const diff = Math.abs(actualGames - pickedGames)
-    const penalties = [0, 0, -1, -2, -3, -4, -4, -4]
-    return penalties[Math.min(diff, 7)]
-  }
-  const winPts = WINNER_PTS[round]
-  const diff = Math.abs(actualGames - pickedGames)
-  const gamePts = diff === 0 ? GAMES_BONUS[round] : diff === 1 ? 0 : [-1, -2, -3, -4, -4][Math.min(diff - 2, 4)]
-  return winPts + gamePts
+function calcPoints(round, pickedWinner, actualWinner, actualGames, pickedGames) {
+  const scale = [
+    { winner: actualWinner, games: 4 },
+    { winner: actualWinner, games: 5 },
+    { winner: actualWinner, games: 6 },
+    { winner: actualWinner, games: 7 },
+    { winner: 'loser', games: 7 },
+    { winner: 'loser', games: 6 },
+    { winner: 'loser', games: 5 },
+    { winner: 'loser', games: 4 },
+  ]
+  const actualPos = scale.findIndex(s => s.winner === actualWinner && s.games === actualGames)
+  const pickedIsWinner = pickedWinner === actualWinner
+  const pickedPos = scale.findIndex(s =>
+    pickedIsWinner
+      ? (s.winner === actualWinner && s.games === pickedGames)
+      : (s.winner === 'loser' && s.games === pickedGames)
+  )
+  const diff = Math.abs(actualPos - pickedPos)
+  const correctWinner = pickedWinner === actualWinner
+  const winPts = correctWinner ? WINNER_PTS[round] : 0
+  const gameAdj = diff === 0 ? GAMES_BONUS[round] : diff === 1 ? 0 : [-1, -2, -3, -4, -4][Math.min(diff - 2, 4)]
+  return winPts + gameAdj
 }
 
 const TEAM_EMOJI = {
@@ -48,9 +61,9 @@ function MobileNav({ page, setPage, isAdmin }) {
       <button className="mobile-menu" onClick={() => setOpen(!open)}>☰</button>
       {open && (
         <div className="mobile-dropdown">
-          {['picks','standings','distributions'].map(p => (
+          {['picks','standings','distributions','scoring'].map(p => (
             <button key={p} className={page === p ? 'active' : ''} onClick={() => { setPage(p); setOpen(false) }}>
-              {p === 'picks' ? 'My Picks' : p === 'standings' ? 'Standings' : 'Pick Distributions'}
+              {p === 'picks' ? 'My Picks' : p === 'standings' ? 'Standings' : p === 'distributions' ? 'Pick Distributions' : 'Scoring Rules'}
             </button>
           ))}
           {isAdmin && <button className={page === 'admin' ? 'active' : ''} onClick={() => { setPage('admin'); setOpen(false) }}>Admin</button>}
@@ -135,7 +148,7 @@ export default function PlayoffPool() {
             else nbaTotal -= 4
             return
           }
-          const pts = calcPoints(s.round, pick.picked_winner === s.result_winner, s.result_games, pick.picked_games)
+          const pts = calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
           if (s.league === 'NHL') nhlTotal += pts
           else nbaTotal += pts
         })
@@ -214,6 +227,7 @@ export default function PlayoffPool() {
               <button className={`nav-tab ${page === 'picks' ? 'active' : ''}`} onClick={() => setPage('picks')}>My Picks</button>
               <button className={`nav-tab ${page === 'standings' ? 'active' : ''}`} onClick={() => setPage('standings')}>Standings</button>
               <button className={`nav-tab ${page === 'distributions' ? 'active' : ''}`} onClick={() => setPage('distributions')}>Pick Distributions</button>
+              <button className={`nav-tab ${page === 'scoring' ? 'active' : ''}`} onClick={() => setPage('scoring')}>Scoring Rules</button>
               {user.is_admin && <button className={`nav-tab ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>Admin</button>}
             </div>
             <MobileNav page={page} setPage={setPage} isAdmin={user.is_admin} />
@@ -226,6 +240,7 @@ export default function PlayoffPool() {
             {page === 'picks' && <PicksPage series={series} userPicks={userPicks} pendingPicks={pendingPicks} setPendingPicks={setPendingPicks} submitPick={submitPick} />}
             {page === 'standings' && <StandingsPage participants={participants} />}
             {page === 'distributions' && <DistributionsPage series={series} allPicks={allPicks} participants={participants} />}
+            {page === 'scoring' && <ScoringRulesPage />}
             {page === 'admin' && user.is_admin && <AdminPage series={series} toggleLock={toggleLock} enterResult={enterResult} participants={participants} showToast={showToast} />}
           </main>
         </div>
@@ -337,7 +352,7 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
         const roundPts = roundSeries.reduce((sum, s) => {
           const pick = userPicks[s.id]
           if (!pick || !s.result_winner) return sum
-          return sum + calcPoints(s.round, pick.winner === s.result_winner, s.result_games, pick.games)
+          return sum + calcPoints(s.round, pick.winner, s.result_winner, s.result_games, pick.games)
         }, 0)
         const pickedCount = roundSeries.filter(s => userPicks[s.id]).length
         return (
@@ -378,7 +393,7 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
                     const isSubmitted = !!submitted && !pendingPicks[s.id]
                     let pts = null
                     if (submitted && s.result_winner) {
-                      pts = calcPoints(s.round, submitted.winner === s.result_winner, s.result_games, submitted.games)
+                      pts = calcPoints(s.round, submitted.winner, s.result_winner, s.result_games, submitted.games)
                     }
                     return (
                       <div key={s.id} className={`series-card ${s.locked ? 'locked' : isSubmitted ? 'submitted' : ''}`}>
@@ -491,6 +506,136 @@ function DistributionsPage({ series, allPicks, participants }) {
     </div>
   )
 }
+
+function ScoringRulesPage() {
+  const rounds = [
+    { round: 1, name: 'First Round',          winPts: 4, gameBonus: 1 },
+    { round: 2, name: 'Second Round',         winPts: 5, gameBonus: 1 },
+    { round: 3, name: 'Conference Finals',    winPts: 6, gameBonus: 2 },
+    { round: 4, name: 'Stanley Cup / Finals', winPts: 8, gameBonus: 3 },
+  ]
+
+  return (
+    <div className="page">
+      <div className="page-title">Scoring Rules</div>
+      <div className="page-sub">How points are calculated for each pick.</div>
+
+      <div style={{marginBottom: 32}}>
+        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Points for Picking the Correct Winner</div>
+        <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden'}}>
+          <table style={{width: '100%', borderCollapse: 'collapse'}}>
+            <thead>
+              <tr>
+                <th style={{textAlign:'left', padding:'10px 20px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.3)', borderBottom:'1px solid rgba(255,255,255,0.06)'}}>Round</th>
+                <th style={{textAlign:'center', padding:'10px 20px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.3)', borderBottom:'1px solid rgba(255,255,255,0.06)'}}>Winner Pts</th>
+                <th style={{textAlign:'center', padding:'10px 20px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.3)', borderBottom:'1px solid rgba(255,255,255,0.06)'}}>Exact Games Bonus</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rounds.map((r, i) => (
+                <tr key={r.round} style={{background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)'}}>
+                  <td style={{padding:'14px 20px', fontSize:14}}>
+                    <span style={{fontFamily:"'Bebas Neue',sans-serif", fontSize:16, letterSpacing:1, color:'#60a5fa', marginRight:10}}>R{r.round}</span>
+                    {r.name}
+                  </td>
+                  <td style={{padding:'14px 20px', textAlign:'center'}}>
+                    <span style={{fontWeight:700, fontSize:20, color:'#86efac'}}>+{r.winPts}</span>
+                  </td>
+                  <td style={{padding:'14px 20px', textAlign:'center'}}>
+                    <span style={{fontWeight:700, fontSize:20, color:'#fbbf24'}}>+{r.gameBonus}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={{marginBottom: 32}}>
+        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>The 8-Position Scale</div>
+        <div style={{fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 16, lineHeight: 1.7}}>
+          Every possible series outcome sits on a linear scale of 8 positions. Your score adjustment is based on how far your pick is from the actual result — regardless of which team you picked.
+        </div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 320}}>
+          {[
+            { label: 'Winner in 4', pos: 1 },
+            { label: 'Winner in 5', pos: 2 },
+            { label: 'Winner in 6', pos: 3 },
+            { label: 'Winner in 7', pos: 4 },
+            { label: 'Loser in 7',  pos: 5 },
+            { label: 'Loser in 6',  pos: 6 },
+            { label: 'Loser in 5',  pos: 7 },
+            { label: 'Loser in 4',  pos: 8 },
+          ].map((item, i) => (
+            <div key={i} style={{display: 'flex', alignItems: 'center', gap: 12}}>
+              <div style={{width: 24, height: 24, borderRadius: '50%', background: i < 4 ? 'rgba(59,130,246,0.2)' : 'rgba(239,68,68,0.15)', border: `1px solid ${i < 4 ? 'rgba(59,130,246,0.4)' : 'rgba(239,68,68,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i < 4 ? '#60a5fa' : '#fca5a5', flexShrink: 0}}>{item.pos}</div>
+              <div style={{fontSize: 14, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)'}}>{item.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{marginBottom: 32}}>
+        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Games Adjustment</div>
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10}}>
+          {[
+            { diff: 0, label: 'Exact',     pts: '+bonus', color: '#fbbf24' },
+            { diff: 1, label: 'Off by 1',  pts: '±0',     color: '#e8eaf0' },
+            { diff: 2, label: 'Off by 2',  pts: '−1',     color: '#fca5a5' },
+            { diff: 3, label: 'Off by 3',  pts: '−2',     color: '#fca5a5' },
+            { diff: 4, label: 'Off by 4',  pts: '−3',     color: '#fca5a5' },
+            { diff: 5, label: 'Off by 5+', pts: '−4',     color: '#fca5a5' },
+          ].map(g => (
+            <div key={g.diff} style={{background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: 16, textAlign: 'center'}}>
+              <div style={{fontSize: 11, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8}}>{g.label}</div>
+              <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 26, letterSpacing: 1, color: g.color}}>{g.pts}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{marginBottom: 32}}>
+        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Examples — Round 1</div>
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
+          {[
+            { scenario: 'Bruins win in 6 · Pick: Bruins in 6',    pts: '+5', color: '#86efac', note: 'Correct + exact → +4 +1' },
+            { scenario: 'Bruins win in 6 · Pick: Bruins in 5',    pts: '+4', color: '#86efac', note: 'Correct + off by 1 → +4 +0' },
+            { scenario: 'Bruins win in 6 · Pick: Bruins in 4',    pts: '+3', color: '#86efac', note: 'Correct + off by 2 → +4 −1' },
+            { scenario: 'Bruins win in 6 · Pick: Lightning in 7', pts: '−2', color: '#fca5a5', note: 'Wrong + off by 2 → 0 −1' },
+            { scenario: 'Bruins win in 6 · Pick: Lightning in 6', pts: '−2', color: '#fca5a5', note: 'Wrong + off by 3 → 0 −2' },
+            { scenario: 'No pick submitted',                       pts: '−4', color: '#fca5a5', note: 'Maximum penalty applied' },
+          ].map((ex, i) => (
+            <div key={i} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px 16px'}}>
+              <div style={{fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 8}}>{ex.scenario}</div>
+              <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, letterSpacing: 1, color: ex.color, marginBottom: 4}}>{ex.pts} pts</div>
+              <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{ex.note}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.06)', padding: '20px 24px'}}>
+        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Payouts</div>
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10}}>
+          {[
+            { label: '🥇 Combined 1st', desc: 'Highest total NHL + NBA score' },
+            { label: '🥈 Combined 2nd', desc: 'Second highest combined score' },
+            { label: '🥉 Combined 3rd', desc: 'Third highest combined score' },
+            { label: '🏒 NHL 1st',      desc: 'Highest NHL-only score' },
+            { label: '🏒 NHL 2nd',      desc: 'Second highest NHL-only score' },
+            { label: '🏀 NBA 1st',      desc: 'Highest NBA-only score' },
+            { label: '🏀 NBA 2nd',      desc: 'Second highest NBA-only score' },
+          ].map((p, i) => (
+            <div key={i} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px 16px', textAlign: 'center'}}>
+              <div style={{fontSize: 14, fontWeight: 700, color: '#e8eaf0', marginBottom: 6}}>{p.label}</div>
+              <div style={{fontSize: 12, color: 'rgba(255,255,255,0.35)'}}>{p.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 function StandingsPage({ participants }) {
   const [view, setView] = useState('combined')
   const sorted = [...participants].sort((a, b) =>
@@ -503,7 +648,7 @@ function StandingsPage({ participants }) {
   return (
     <div className="page">
       <div className="page-title">Standings</div>
-      <div className="page-sub">Updated after each series result. Top {view === 'combined' ? '3 combined' : '2'} win a payout.</div>
+      <div className="page-sub">Updated after each series result. Top 3 combined and top 2 NHL/NBA win a payout.</div>
       <div className="standings-tabs">
         <button className={`std-tab ${view === 'combined' ? 'active' : ''}`} onClick={() => setView('combined')}>🏆 Combined</button>
         <button className={`std-tab ${view === 'nhl' ? 'active' : ''}`} onClick={() => setView('nhl')}>🏒 NHL</button>
@@ -524,10 +669,11 @@ function StandingsPage({ participants }) {
             {sorted.map((p, i) => {
               const rank = i + 1
               const isPayout = rank <= payoutCount
+              const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 && view === 'combined' ? '🥉' : rank
               return (
                 <tr key={p.id} className={isPayout ? 'payout-row' : ''}>
-                  <td><span className={`rank-num ${rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : ''}`}>{rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank}</span></td>
-                  <td>{p.full_name}{isPayout && <span className={`payout-badge ${rank === 1 ? 'payout-gold' : 'payout-silver'}`}>PAYOUT</span>}</td>
+                  <td><span className={`rank-num ${rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : ''}`}>{medal}</span></td>
+                  <td>{p.full_name}{isPayout && <span className={`payout-badge ${rank === 1 ? 'payout-gold' : rank === 2 ? 'payout-silver' : 'payout-bronze'}`}>PAYOUT</span>}</td>
                   <td style={{textAlign:'right', color: p.nhlTotal >= 0 ? '#86efac' : '#fca5a5', fontWeight: 600}}>{p.nhlTotal >= 0 ? '+' : ''}{p.nhlTotal}</td>
                   <td style={{textAlign:'right', color: p.nbaTotal >= 0 ? '#86efac' : '#fca5a5', fontWeight: 600}}>{p.nbaTotal >= 0 ? '+' : ''}{p.nbaTotal}</td>
                   <td style={{textAlign:'right'}}><span className={`score-val ${p.combined >= 0 ? 'score-pos' : ''}`}>{p.combined >= 0 ? '+' : ''}{p.combined}</span></td>
@@ -643,7 +789,7 @@ const css = `
   .field-input { width: 100%; padding: 12px 16px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
   .field-input:focus { border-color: rgba(59,130,246,0.5); }
   .pin-row { display: flex; gap: 10px; margin-bottom: 16px; }
-  .pin-input { width: 52px; height: 52px; text-align: center; font-size: 20px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; } text-align: center; font-size: 22px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; }
+  .pin-input { width: 52px; height: 52px; text-align: center; font-size: 20px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; }
   .pin-input:focus { border-color: rgba(59,130,246,0.5); }
   .btn-primary { width: 100%; padding: 14px; border-radius: 10px; background: #3b82f6; border: none; color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
   .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
@@ -697,6 +843,7 @@ const css = `
   .payout-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin-left: 8px; }
   .payout-gold { background: rgba(251,191,36,0.2); color: #fbbf24; }
   .payout-silver { background: rgba(148,163,184,0.2); color: #94a3b8; }
+  .payout-bronze { background: rgba(184,115,51,0.2); color: #b87333; }
   .score-val { font-weight: 700; font-size: 16px; }
   .score-pos { color: #86efac; }
   .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
