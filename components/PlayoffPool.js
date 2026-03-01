@@ -41,6 +41,25 @@ const TEAM_EMOJI = {
   "Houston Rockets": "🚀", "Memphis Grizzlies": "🐻",
 }
 
+function MobileNav({ page, setPage, isAdmin }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button className="mobile-menu" onClick={() => setOpen(!open)}>☰</button>
+      {open && (
+        <div className="mobile-dropdown">
+          {['picks','standings','distributions'].map(p => (
+            <button key={p} className={page === p ? 'active' : ''} onClick={() => { setPage(p); setOpen(false) }}>
+              {p === 'picks' ? 'My Picks' : p === 'standings' ? 'Standings' : 'Pick Distributions'}
+            </button>
+          ))}
+          {isAdmin && <button className={page === 'admin' ? 'active' : ''} onClick={() => { setPage('admin'); setOpen(false) }}>Admin</button>}
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function PlayoffPool() {
   const [user, setUser] = useState(null)
   const [page, setPage] = useState('picks')
@@ -193,6 +212,7 @@ export default function PlayoffPool() {
               <button className={`nav-tab ${page === 'distributions' ? 'active' : ''}`} onClick={() => setPage('distributions')}>Pick Distributions</button>
               {user.is_admin && <button className={`nav-tab ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>Admin</button>}
             </div>
+            <MobileNav page={page} setPage={setPage} isAdmin={user.is_admin} />
             <div className="nav-user">
               <strong>{user.full_name}</strong>
               <button className="logout-btn" onClick={() => setUser(null)}>Sign Out</button>
@@ -424,7 +444,6 @@ function DistributionsPage({ series, allPicks, participants }) {
           const totalPicks = seriesPicks.length
           const homePct = totalPicks > 0 ? Math.round((homePicks / totalPicks) * 100) : 50
           const awayPct = totalPicks > 0 ? Math.round((awayPicks / totalPicks) * 100) : 50
-
           return (
             <div key={s.id} className="series-card">
               <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 12, letterSpacing: 1}}>
@@ -607,6 +626,11 @@ const css = `
   .nav-user strong { color: #fff; }
   .logout-btn { padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.5); font-size: 12px; cursor: pointer; transition: all 0.2s; }
   .logout-btn:hover { border-color: rgba(255,255,255,0.3); color: #fff; }
+  .mobile-menu { display: none; background: transparent; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 18px; padding: 4px 10px; cursor: pointer; }
+  .mobile-dropdown { display: none; position: absolute; top: 61px; left: 0; right: 0; background: rgba(10,14,26,0.98); border-bottom: 1px solid rgba(255,255,255,0.08); flex-direction: column; z-index: 99; padding: 8px 16px 16px; }
+  .mobile-dropdown button { padding: 12px 16px; background: transparent; border: none; color: rgba(255,255,255,0.6); font-size: 15px; font-weight: 500; cursor: pointer; text-align: left; border-radius: 8px; width: 100%; }
+  .mobile-dropdown button:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .mobile-dropdown button.active { color: #60a5fa; background: rgba(59,130,246,0.1); }
   .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0a0e1a; background-image: radial-gradient(ellipse at 30% 40%, rgba(0,80,160,0.2) 0%, transparent 60%), radial-gradient(ellipse at 70% 70%, rgba(0,120,60,0.1) 0%, transparent 50%); }
   .login-card { width: 380px; padding: 48px 40px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; backdrop-filter: blur(20px); }
   .login-title { font-family: 'Bebas Neue', sans-serif; font-size: 42px; letter-spacing: 3px; text-align: center; margin-bottom: 4px; }
@@ -685,5 +709,14 @@ const css = `
   .blast-btn { width: 100%; margin-top: 8px; padding: 12px; border-radius: 10px; background: rgba(139,92,246,0.2); border: 1px solid rgba(139,92,246,0.4); color: #c4b5fd; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
   .blast-btn:hover { background: rgba(139,92,246,0.35); }
   .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; background: rgba(34,197,94,0.9); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; }
-  @media (max-width: 600px) { .admin-grid { grid-template-columns: 1fr; } .nav-tabs { display: none; } }
+  @media (max-width: 600px) {
+    .admin-grid { grid-template-columns: 1fr; }
+    .nav-tabs { display: none; }
+    .mobile-menu { display: block !important; }
+    .mobile-dropdown { display: flex; }
+    .nav-user strong { display: none; }
+    .page { padding: 20px 16px; }
+    .series-grid { grid-template-columns: 1fr; }
+    .league-tabs { flex-wrap: wrap; }
+  }
 `
