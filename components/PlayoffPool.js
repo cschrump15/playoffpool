@@ -130,7 +130,11 @@ export default function PlayoffPool() {
         allSeries.forEach(s => {
           if (!s.result_winner) return
           const pick = picks.find(p => p.user_id === u.id && p.series_id === s.id)
-          if (!pick) return
+          if (!pick) {
+            if (s.league === 'NHL') nhlTotal -= 4
+            else nbaTotal -= 4
+            return
+          }
           const pts = calcPoints(s.round, pick.picked_winner === s.result_winner, s.result_games, pick.picked_games)
           if (s.league === 'NHL') nhlTotal += pts
           else nbaTotal += pts
