@@ -64,14 +64,10 @@ export default function PlayoffPool() {
     }
   }, [user])
 
-  // Auto-lock series when game1 time passes
   useEffect(() => {
     const interval = setInterval(async () => {
       const now = new Date()
-      const { data } = await supabase
-        .from('series')
-        .select('*')
-        .eq('locked', false)
+      const { data } = await supabase.from('series').select('*').eq('locked', false)
       if (data) {
         data.forEach(async (s) => {
           if (s.game1_time && new Date(s.game1_time) <= now) {
@@ -80,7 +76,7 @@ export default function PlayoffPool() {
         })
         loadSeries()
       }
-    }, 60000) // check every minute
+    }, 60000)
     return () => clearInterval(interval)
   }, [])
 
@@ -126,19 +122,9 @@ export default function PlayoffPool() {
 
   async function handleLogin(fullName, pin) {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('full_name', fullName)
-      .single()
-    if (error || !data) {
-      setLoading(false)
-      return 'User not found'
-    }
-    if (data.pin_hash !== pin) {
-      setLoading(false)
-      return 'Incorrect PIN'
-    }
+    const { data, error } = await supabase.from('users').select('*').eq('full_name', fullName).single()
+    if (error || !data) { setLoading(false); return 'User not found' }
+    if (data.pin_hash !== pin) { setLoading(false); return 'Incorrect PIN' }
     setUser(data)
     setLoading(false)
     return null
@@ -146,15 +132,8 @@ export default function PlayoffPool() {
 
   async function handleRegister(fullName, phone, pin) {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('users')
-      .insert({ full_name: fullName, phone, pin_hash: pin })
-      .select()
-      .single()
-    if (error) {
-      setLoading(false)
-      return error.message.includes('unique') ? 'Phone number already registered' : 'Registration failed'
-    }
+    const { data, error } = await supabase.from('users').insert({ full_name: fullName, phone, pin_hash: pin }).select().single()
+    if (error) { setLoading(false); return error.message.includes('unique') ? 'Phone number already registered' : 'Registration failed' }
     setUser(data)
     setLoading(false)
     return null
@@ -164,10 +143,8 @@ export default function PlayoffPool() {
     const p = pendingPicks[seriesId]
     if (!p?.winner || !p?.games) return
     const { error } = await supabase.from('picks').upsert({
-      user_id: user.id,
-      series_id: seriesId,
-      picked_winner: p.winner,
-      picked_games: p.games,
+      user_id: user.id, series_id: seriesId,
+      picked_winner: p.winner, picked_games: p.games,
     }, { onConflict: 'user_id,series_id' })
     if (!error) {
       setUserPicks(prev => ({ ...prev, [seriesId]: p }))
@@ -288,7 +265,6 @@ function LoginScreen({ onLogin, onRegister, loading }) {
     </div>
   )
 }
-
 function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPick }) {
   const [league, setLeague] = useState('NHL')
   const currentSeries = series[league]
@@ -484,4 +460,158 @@ function AdminPage({ series, toggleLock, enterResult, participants, showToast })
           <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px'}}>
             {['NHL','NBA'].map(lg => (
               <div key={lg}>
-                <div style={{fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.3)', marginBottom: 10, textTransform:'uppe
+                <div style={{fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.3)', marginBottom: 10, textTransform:'uppercase'}}>{lg}</div>
+                {series[lg].map(s => (
+                  <div key={s.id} style={{padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s.result_winner ? 0 : 8}}>
+                      <span style={{fontSize: 12}}>{s.home_team} vs {s.away_team}</span>
+                      <button className={`lock-toggle ${s.locked ? 'locked-btn' : 'unlocked'}`} onClick={() => toggleLock(lg, s.id)}>
+                        {s.locked ? 'UNLOCK' : 'LOCK'}
+                      </button>
+                    </div>
+                    {!s.result_winner && s.locked && (
+                      <div style={{display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap'}}>
+                        <select
+                          style={{flex: 1, padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 12}}
+                          onChange={e => setResultInputs(prev => ({ ...prev, [s.id]: { ...prev[s.id], winner: e.target.value } }))}
+                        >
+                          <option value="">Winner...</option>
+                          <option>{s.home_team}</option>
+                          <option>{s.away_team}</option>
+                        </select>
+                        <select
+                          style={{width: 70, padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 12}}
+                          onChange={e => setResultInputs(prev => ({ ...prev, [s.id]: { ...prev[s.id], games: parseInt(e.target.value) } }))}
+                        >
+                          <option value="">Gms</option>
+                          {[4,5,6,7].map(g => <option key={g}>{g}</option>)}
+                        </select>
+                        <button
+                          onClick={() => { const r = resultInputs[s.id]; if (r?.winner && r?.games) enterResult(s.id, r.winner, r.games) }}
+                          style={{padding: '5px 12px', borderRadius: 6, background: 'rgba(34,197,94,0.2)', border: '1px solid rgba(34,197,94,0.3)', color: '#86efac', fontSize: 12, cursor: 'pointer'}}
+                        >Save</button>
+                      </div>
+                    )}
+                    {s.result_winner && (
+                      <div style={{fontSize: 11, color: '#86efac', marginTop: 4}}>✓ {s.result_winner} in {s.result_games}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="admin-card">
+          <h3>Pool Stats</h3>
+          <div className="stat-row"><span>Total Participants</span><span className="stat-val">{participants.length}</span></div>
+          <div className="stat-row"><span>Series Locked</span><span className="stat-val">{allSeries.filter(s => s.locked).length} / {allSeries.length}</span></div>
+          <div className="stat-row"><span>Series Completed</span><span className="stat-val">{allSeries.filter(s => s.result_winner).length} / {allSeries.length}</span></div>
+        </div>
+        <div className="admin-card">
+          <h3>Text Notifications</h3>
+          <div style={{fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 16, lineHeight: 1.6}}>SMS blasts via Twilio — coming in a future update.</div>
+          <button className="blast-btn" onClick={() => showToast('📱 Coming soon!')}>📱 Send Picks Reminder</button>
+          <button className="blast-btn" style={{marginTop: 8}} onClick={() => showToast('🏆 Coming soon!')}>🏆 Send Standings Update</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const css = `
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; }
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap');
+  .app { min-height: 100vh; background: #0a0e1a; color: #e8eaf0; }
+  .app::before { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at 20% 50%, rgba(0,80,160,0.15) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(0,160,80,0.08) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+  .content { position: relative; z-index: 1; }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: rgba(10,14,26,0.9); border-bottom: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 100; }
+  .nav-logo { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; }
+  .nav-tabs { display: flex; gap: 4px; }
+  .nav-tab { padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; background: transparent; border: none; color: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.2s; }
+  .nav-tab:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .nav-tab.active { background: rgba(59,130,246,0.2); color: #60a5fa; }
+  .nav-user { font-size: 13px; color: rgba(255,255,255,0.5); display: flex; align-items: center; gap: 8px; }
+  .nav-user strong { color: #fff; }
+  .logout-btn { padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.5); font-size: 12px; cursor: pointer; transition: all 0.2s; }
+  .logout-btn:hover { border-color: rgba(255,255,255,0.3); color: #fff; }
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0a0e1a; background-image: radial-gradient(ellipse at 30% 40%, rgba(0,80,160,0.2) 0%, transparent 60%), radial-gradient(ellipse at 70% 70%, rgba(0,120,60,0.1) 0%, transparent 50%); }
+  .login-card { width: 380px; padding: 48px 40px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; backdrop-filter: blur(20px); }
+  .login-title { font-family: 'Bebas Neue', sans-serif; font-size: 42px; letter-spacing: 3px; text-align: center; margin-bottom: 4px; }
+  .login-sub { text-align: center; color: rgba(255,255,255,0.4); font-size: 13px; margin-bottom: 36px; }
+  .field-label { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,0.4); text-transform: uppercase; margin-bottom: 6px; }
+  .field-input { width: 100%; padding: 12px 16px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
+  .field-input:focus { border-color: rgba(59,130,246,0.5); }
+  .pin-row { display: flex; gap: 10px; margin-bottom: 16px; }
+  .pin-input { flex: 1; aspect-ratio: 1; text-align: center; font-size: 22px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; }
+  .pin-input:focus { border-color: rgba(59,130,246,0.5); }
+  .btn-primary { width: 100%; padding: 14px; border-radius: 10px; background: #3b82f6; border: none; color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
+  .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .register-link { text-align: center; margin-top: 20px; font-size: 13px; color: rgba(255,255,255,0.4); }
+  .register-link button { background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 13px; }
+  .error-msg { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+  .page-title { font-family: 'Bebas Neue', sans-serif; font-size: 36px; letter-spacing: 2px; margin-bottom: 8px; }
+  .page-sub { color: rgba(255,255,255,0.4); font-size: 14px; margin-bottom: 32px; }
+  .league-tabs { display: flex; gap: 8px; margin-bottom: 28px; }
+  .league-tab { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
+  .league-tab.active-nhl { background: rgba(0,100,200,0.2); border-color: rgba(0,100,200,0.4); color: #60a5fa; }
+  .league-tab.active-nba { background: rgba(200,50,0,0.2); border-color: rgba(200,50,0,0.4); color: #f87171; }
+  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .series-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; transition: border-color 0.2s; position: relative; overflow: hidden; }
+  .series-card:hover { border-color: rgba(255,255,255,0.15); }
+  .series-card.locked { opacity: 0.75; }
+  .series-card.locked::after { content: '🔒 LOCKED'; position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 700; letter-spacing: 1px; background: rgba(239,68,68,0.2); color: #fca5a5; padding: 3px 8px; border-radius: 4px; }
+  .series-card.submitted::after { content: '✓ SUBMITTED'; position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 700; letter-spacing: 1px; background: rgba(34,197,94,0.2); color: #86efac; padding: 3px 8px; border-radius: 4px; }
+  .matchup { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .team-opt { flex: 1; padding: 10px 12px; border-radius: 10px; border: 2px solid rgba(255,255,255,0.1); background: transparent; color: #fff; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; text-align: center; line-height: 1.3; }
+  .team-opt:hover:not(:disabled) { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
+  .team-opt.selected { border-color: #3b82f6; background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .team-opt:disabled { cursor: default; }
+  .games-row { margin-top: 12px; }
+  .games-label { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,0.35); text-transform: uppercase; margin-bottom: 8px; }
+  .games-opts { display: flex; gap: 6px; }
+  .game-num { flex: 1; padding: 7px 4px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; text-align: center; }
+  .game-num:hover:not(:disabled) { border-color: rgba(255,255,255,0.3); color: #fff; }
+  .game-num.selected { border-color: #3b82f6; background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .game-num:disabled { cursor: default; }
+  .submit-pick-btn { width: 100%; margin-top: 14px; padding: 10px; border-radius: 10px; background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.4); color: #93c5fd; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .submit-pick-btn:hover:not(:disabled) { background: rgba(59,130,246,0.35); }
+  .submit-pick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .result-badge { margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: space-between; }
+  .result-badge strong { color: #fff; }
+  .pts-badge { font-weight: 700; font-size: 14px; }
+  .pts-pos { color: #86efac; }
+  .pts-neg { color: #fca5a5; }
+  .standings-tabs { display: flex; gap: 8px; margin-bottom: 28px; }
+  .std-tab { padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
+  .std-tab.active { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); color: #fff; }
+  .standings-table { width: 100%; border-collapse: collapse; }
+  .standings-table th { text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.3); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .standings-table td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 14px; }
+  .standings-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .rank-num { font-family: 'Bebas Neue', sans-serif; font-size: 22px; color: rgba(255,255,255,0.2); }
+  .rank-1 { color: #fbbf24; } .rank-2 { color: #94a3b8; } .rank-3 { color: #b87333; }
+  .payout-row td { background: rgba(255,255,255,0.02); }
+  .payout-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin-left: 8px; }
+  .payout-gold { background: rgba(251,191,36,0.2); color: #fbbf24; }
+  .payout-silver { background: rgba(148,163,184,0.2); color: #94a3b8; }
+  .score-val { font-weight: 700; font-size: 16px; }
+  .score-pos { color: #86efac; }
+  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .admin-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
+  .admin-card h3 { font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 1px; margin-bottom: 16px; color: rgba(255,255,255,0.7); }
+  .lock-toggle { padding: 5px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: none; cursor: pointer; transition: all 0.2s; }
+  .lock-toggle.unlocked { background: rgba(239,68,68,0.2); color: #fca5a5; }
+  .lock-toggle.unlocked:hover { background: rgba(239,68,68,0.35); }
+  .lock-toggle.locked-btn { background: rgba(34,197,94,0.2); color: #86efac; }
+  .lock-toggle.locked-btn:hover { background: rgba(34,197,94,0.35); }
+  .stat-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-val { font-weight: 700; color: #fff; }
+  .blast-btn { width: 100%; margin-top: 8px; padding: 12px; border-radius: 10px; background: rgba(139,92,246,0.2); border: 1px solid rgba(139,92,246,0.4); color: #c4b5fd; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .blast-btn:hover { background: rgba(139,92,246,0.35); }
+  .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; background: rgba(34,197,94,0.9); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; }
+  @media (max-width: 600px) { .admin-grid { grid-template-columns: 1fr; } .nav-tabs { display: none; } }
+`
