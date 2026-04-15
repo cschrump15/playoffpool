@@ -1,4 +1,4 @@
-import PlayoffPool from '@/components/playoffpool'
+import PlayoffPool from '@/components/PlayoffPool'
 
 export default function Home() {
   return <PlayoffPool />
