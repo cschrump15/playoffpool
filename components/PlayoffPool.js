@@ -84,6 +84,47 @@ const TEAM_COLORS = {
   "TBD":                     { bg: "#2a2f3e", text: "#ffffff" },
 }
 
+function shadeHex(hex, factor) {
+  const r = parseInt(hex.slice(1,3),16)
+  const g = parseInt(hex.slice(3,5),16)
+  const b = parseInt(hex.slice(5,7),16)
+  return `rgb(${Math.round(r+(255-r)*factor)},${Math.round(g+(255-g)*factor)},${Math.round(b+(255-b)*factor)})`
+}
+
+function DonutChart({ slices, size = 160 }) {
+  const cx = size / 2, cy = size / 2
+  const r = size / 2 - 8
+  const innerR = r * 0.55
+  let cumAngle = -Math.PI / 2
+  const total = slices.reduce((s, sl) => s + sl.count, 0)
+  if (total === 0) return null
+  const paths = slices.map(sl => {
+    const pct = sl.count / total
+    const angle = pct * 2 * Math.PI
+    const x1 = cx + r * Math.cos(cumAngle)
+    const y1 = cy + r * Math.sin(cumAngle)
+    const x2 = cx + r * Math.cos(cumAngle + angle)
+    const y2 = cy + r * Math.sin(cumAngle + angle)
+    const ix1 = cx + innerR * Math.cos(cumAngle)
+    const iy1 = cy + innerR * Math.sin(cumAngle)
+    const ix2 = cx + innerR * Math.cos(cumAngle + angle)
+    const iy2 = cy + innerR * Math.sin(cumAngle + angle)
+    const largeArc = angle > Math.PI ? 1 : 0
+    const path = `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix1} ${iy1} Z`
+    cumAngle += angle
+    return { path, color: sl.color }
+  })
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {paths.map((p, i) => (
+        <path key={i} d={p.path} fill={p.color} stroke="#0f1219" strokeWidth="2" />
+      ))}
+      <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" fontWeight="800" fill="#fff" fontFamily="Barlow Condensed, sans-serif">{total}</text>
+      <text x={cx} y={cy + 14} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.4)" fontFamily="Barlow, sans-serif">picks</text>
+    </svg>
+  )
+}
+
 function MobileNav({ page, setPage, isAdmin }) {
   const [open, setOpen] = useState(false)
   const pages = [
@@ -273,7 +314,7 @@ export default function PlayoffPool() {
           </nav>
           <main>
             {page === 'picks' && <PicksPage series={series} userPicks={userPicks} pendingPicks={pendingPicks} setPendingPicks={setPendingPicks} submitPick={submitPick} />}
-            {page === 'standings' && <StandingsPage participants={participants} />}
+            {page === 'standings' && <StandingsPage participants={participants} allPicks={allPicks} series={series} />}
             {page === 'distributions' && <DistributionsPage series={series} allPicks={allPicks} participants={participants} />}
             {page === 'scoring' && <ScoringRulesPage />}
             {page === 'admin' && user.is_admin && <AdminPage series={series} toggleLock={toggleLock} enterResult={enterResult} participants={participants} allPicks={allPicks} showToast={showToast} />}
@@ -486,71 +527,136 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
   )
 }
 
+function SeriesDistCard({ s, allPicks, participants }) {
+  const [open, setOpen] = useState(false)
+  const picks = allPicks.filter(p => p.series_id === s.id)
+  const total = picks.length
+
+  const groups = {}
+  picks.forEach(p => {
+    const key = `${p.picked_winner}|${p.picked_games}`
+    groups[key] = (groups[key] || 0) + 1
+  })
+
+  const slices = []
+  const legend = []
+  ;[s.home_team, s.away_team].forEach(team => {
+    const baseHex = TEAM_COLORS[team]?.bg || '#444444'
+    const teamPicks = Object.entries(groups)
+      .filter(([k]) => k.startsWith(team + '|'))
+      .map(([k, cnt]) => ({ games: parseInt(k.split('|')[1]), cnt }))
+      .sort((a, b) => a.games - b.games)
+    teamPicks.forEach((tp, idx) => {
+      const shade = teamPicks.length <= 1 ? 0 : idx * (0.4 / (teamPicks.length - 1))
+      const color = shadeHex(baseHex, shade)
+      slices.push({ color, count: tp.cnt, team, games: tp.games })
+      legend.push({ color, label: `${team.split(' ').pop()} in ${tp.games}`, count: tp.cnt })
+    })
+  })
+
+  const homeCount = picks.filter(p => p.picked_winner === s.home_team).length
+  const awayCount = picks.filter(p => p.picked_winner === s.away_team).length
+  const homeColor = TEAM_COLORS[s.home_team]?.bg || '#888'
+  const awayColor = TEAM_COLORS[s.away_team]?.bg || '#888'
+  const homeText = TEAM_COLORS[s.home_team]?.text || '#fff'
+  const awayText = TEAM_COLORS[s.away_team]?.text || '#fff'
+
+  return (
+    <div style={{background: '#1c2030', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, overflow: 'hidden', marginBottom: 10}}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#e8eaf0', textAlign: 'left'}}
+      >
+        <div style={{flex: 1}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4}}>
+            <span style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700}}>{s.home_team}</span>
+            <span style={{fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700}}>VS</span>
+            <span style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700}}>{s.away_team}</span>
+          </div>
+          <div style={{fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif"}}>
+            {total} picks
+            {s.result_winner && <span style={{marginLeft: 8, color: '#6ee87a'}}>· Final: {s.result_winner} in {s.result_games}</span>}
+            {!s.result_winner && <span style={{marginLeft: 8, color: '#f97316'}}>· In progress</span>}
+          </div>
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+          <div style={{display: 'flex', gap: 6}}>
+            <span style={{background: homeColor, color: homeText, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, padding: '3px 10px', borderRadius: 5}}>{homeCount}</span>
+            <span style={{background: awayColor, color: awayText, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, padding: '3px 10px', borderRadius: 5}}>{awayCount}</span>
+          </div>
+          <span style={{color: 'rgba(255,255,255,0.3)', fontSize: 16, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)'}}>▾</span>
+        </div>
+      </button>
+
+      {open && (
+        <div style={{padding: '0 18px 20px'}}>
+          <div style={{display: 'grid', gridTemplateColumns: '160px 1fr', gap: 24, marginBottom: 24, alignItems: 'center'}}>
+            <DonutChart slices={slices} size={160} />
+            <div>
+              <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10}}>Pick Distribution</div>
+              {legend.map((l, i) => (
+                <div key={i} style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8}}>
+                  <div style={{width: 12, height: 12, borderRadius: 3, background: l.color, flexShrink: 0}} />
+                  <span style={{fontSize: 13, color: 'rgba(255,255,255,0.7)', flex: 1, fontFamily: "'Barlow', sans-serif"}}>{l.label}</span>
+                  <span style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700, color: '#fff'}}>{l.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10}}>Player Picks</div>
+          <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+            {participants.map(u => {
+              const pick = picks.find(p => p.user_id === u.id)
+              const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
+              let pts = null
+              if (pick && s.result_winner) {
+                pts = calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
+              }
+              return (
+                <div key={u.id} style={{display: 'flex', alignItems: 'center', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, gap: 12, border: '1px solid rgba(255,255,255,0.05)'}}>
+                  <span style={{flex: 1, fontSize: 14, fontWeight: 500, fontFamily: "'Barlow', sans-serif"}}>{u.full_name}</span>
+                  {pick ? (
+                    <>
+                      <span style={{background: tc.bg, color: tc.text, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, padding: '3px 10px', borderRadius: 5}}>
+                        {pick.picked_winner.split(' ').pop()}
+                      </span>
+                      <span style={{fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif", minWidth: 30}}>in {pick.picked_games}</span>
+                      <span style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700, minWidth: 36, textAlign: 'right', color: pts === null ? 'rgba(255,255,255,0.3)' : pts > 0 ? '#6ee87a' : pts < 0 ? '#f87171' : 'rgba(255,255,255,0.4)'}}>
+                        {pts === null ? '—' : pts > 0 ? `+${pts}` : pts}
+                      </span>
+                    </>
+                  ) : (
+                    <span style={{fontSize: 12, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700}}>NO PICK</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DistributionsPage({ series, allPicks, participants }) {
   const [league, setLeague] = useState('NHL')
-  const currentSeries = series[league]
-  const total = participants.length
+  const currentSeries = series[league].filter(s => s.locked)
 
   return (
     <div className="page">
       <div className="page-title">Pick Distributions</div>
-      <div className="page-sub">See how the pool is split on every series — picks only visible after series locks.</div>
+      <div className="page-sub">Click any series to expand picks and distribution. Only visible after series locks.</div>
       <div className="league-tabs">
         <button className={`league-tab ${league === 'NHL' ? 'active-nhl' : ''}`} onClick={() => setLeague('NHL')}>🏒 NHL Playoffs</button>
         <button className={`league-tab ${league === 'NBA' ? 'active-nba' : ''}`} onClick={() => setLeague('NBA')}>🏀 NBA Playoffs</button>
       </div>
-      {currentSeries.length === 0 && <div style={{color: 'rgba(255,255,255,0.4)', marginTop: 40, textAlign: 'center'}}>No series added yet.</div>}
-      <div className="series-grid">
-        {currentSeries.map(s => {
-          const seriesPicks = allPicks.filter(p => p.series_id === s.id)
-          const homePicks = seriesPicks.filter(p => p.picked_winner === s.home_team).length
-          const awayPicks = seriesPicks.filter(p => p.picked_winner === s.away_team).length
-          const totalPicks = seriesPicks.length
-          const homePct = totalPicks > 0 ? Math.round((homePicks / totalPicks) * 100) : 50
-          const awayPct = totalPicks > 0 ? Math.round((awayPicks / totalPicks) * 100) : 50
-          const homeColor = TEAM_COLORS[s.home_team]?.bg || '#f97316'
-          const awayColor = TEAM_COLORS[s.away_team]?.bg || '#60a5fa'
-          return (
-            <div key={s.id} className="series-card">
-              <div style={{fontSize: 10, color: 'rgba(255,255,255,0.25)', marginBottom: 12, letterSpacing: 1, textTransform: 'uppercase'}}>
-                Round {s.round} · {totalPicks}/{total} picks submitted
-              </div>
-              {!s.locked ? (
-                <div style={{textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 13, padding: '20px 0'}}>
-                  🔒 Distributions visible after series locks
-                </div>
-              ) : (
-                <>
-                  <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 8}}>
-                    <div style={{textAlign: 'center', flex: 1}}>
-                      <div style={{width: 32, height: 4, borderRadius: 2, background: homeColor, margin: '0 auto 8px'}} />
-                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700}}>{s.home_team}</div>
-                      <div style={{fontSize: 22, fontWeight: 700, color: homeColor}}>{homePct}%</div>
-                      <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{homePicks} picks</div>
-                    </div>
-                    <div style={{display: 'flex', alignItems: 'center', padding: '0 12px', color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700}}>VS</div>
-                    <div style={{textAlign: 'center', flex: 1}}>
-                      <div style={{width: 32, height: 4, borderRadius: 2, background: awayColor, margin: '0 auto 8px'}} />
-                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700}}>{s.away_team}</div>
-                      <div style={{fontSize: 22, fontWeight: 700, color: awayColor}}>{awayPct}%</div>
-                      <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{awayPicks} picks</div>
-                    </div>
-                  </div>
-                  <div style={{height: 5, borderRadius: 3, overflow: 'hidden', marginTop: 8, display: 'flex'}}>
-                    <div style={{width: `${homePct}%`, background: homeColor, transition: 'width 0.5s ease'}} />
-                    <div style={{flex: 1, background: awayColor}} />
-                  </div>
-                  {s.result_winner && (
-                    <div style={{marginTop: 10, fontSize: 11, color: '#6ee87a', textAlign: 'center'}}>
-                      ✓ Result: <strong>{s.result_winner}</strong> in {s.result_games}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {currentSeries.length === 0 && (
+        <div style={{color: 'rgba(255,255,255,0.4)', marginTop: 40, textAlign: 'center'}}>No locked series yet.</div>
+      )}
+      {currentSeries.map(s => (
+        <SeriesDistCard key={s.id} s={s} allPicks={allPicks} participants={participants} />
+      ))}
     </div>
   )
 }
@@ -646,19 +752,23 @@ function ScoringRulesPage() {
     </div>
   )
 }
-function StandingsPage({ participants }) {
+function StandingsPage({ participants, allPicks, series }) {
   const [view, setView] = useState('combined')
+  const [expandedId, setExpandedId] = useState(null)
+
   const sorted = [...participants].sort((a, b) =>
     view === 'nhl' ? b.nhlTotal - a.nhlTotal :
     view === 'nba' ? b.nbaTotal - a.nbaTotal :
     b.combined - a.combined
   )
   const payoutCount = view === 'combined' ? 3 : 2
+  const allSeries = [...(series.NHL || []), ...(series.NBA || [])]
+  const lockedSeries = allSeries.filter(s => s.locked)
 
   return (
     <div className="page">
       <div className="page-title">Standings</div>
-      <div className="page-sub">Updated after each series result. Top 3 combined and top 2 NHL/NBA win a payout.</div>
+      <div className="page-sub">Updated after each series result. Click any name to expand their picks.</div>
       <div className="standings-tabs">
         <button className={`std-tab ${view === 'combined' ? 'active' : ''}`} onClick={() => setView('combined')}>🏆 Combined</button>
         <button className={`std-tab ${view === 'nhl' ? 'active' : ''}`} onClick={() => setView('nhl')}>🏒 NHL</button>
@@ -680,17 +790,81 @@ function StandingsPage({ participants }) {
               const rank = i + 1
               const isPayout = rank <= payoutCount
               const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : (rank === 3 && view === 'combined') ? '🥉' : rank
+              const isExpanded = expandedId === p.id
+              const playerPicks = lockedSeries.map(s => {
+                const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
+                let pts = null
+                if (pick && s.result_winner) {
+                  pts = calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
+                }
+                return { s, pick, pts }
+              })
               return (
-                <tr key={p.id} className={isPayout ? 'payout-row' : ''}>
-                  <td><span className={`rank-num ${rank===1?'rank-1':rank===2?'rank-2':rank===3?'rank-3':''}`}>{medal}</span></td>
-                  <td>
-                    {p.full_name}
-                    {isPayout && <span className={`payout-badge ${rank===1?'payout-gold':rank===2?'payout-silver':'payout-bronze'}`}>PAYOUT</span>}
-                  </td>
-                  <td style={{textAlign:'right', color: p.nhlTotal >= 0 ? '#6ee87a' : '#f87171', fontWeight: 600}}>{p.nhlTotal >= 0 ? '+' : ''}{p.nhlTotal}</td>
-                  <td style={{textAlign:'right', color: p.nbaTotal >= 0 ? '#6ee87a' : '#f87171', fontWeight: 600}}>{p.nbaTotal >= 0 ? '+' : ''}{p.nbaTotal}</td>
-                  <td style={{textAlign:'right'}}><span className={`score-val ${p.combined >= 0 ? 'score-pos' : 'score-neg'}`}>{p.combined >= 0 ? '+' : ''}{p.combined}</span></td>
-                </tr>
+                <>
+                  <tr
+                    key={p.id}
+                    onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                    className={isPayout ? 'payout-row' : ''}
+                    style={{cursor: 'pointer', background: isExpanded ? 'rgba(249,115,22,0.06)' : undefined, borderBottom: isExpanded ? 'none' : undefined}}
+                    onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'rgba(249,115,22,0.04)' }}
+                    onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = isPayout ? 'rgba(249,115,22,0.04)' : 'transparent' }}
+                  >
+                    <td><span className={`rank-num ${rank===1?'rank-1':rank===2?'rank-2':rank===3?'rank-3':''}`}>{medal}</span></td>
+                    <td>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                        <span style={{color: isExpanded ? '#f97316' : '#e8eaf0'}}>{p.full_name}</span>
+                        {isPayout && <span className={`payout-badge ${rank===1?'payout-gold':rank===2?'payout-silver':'payout-bronze'}`}>PAYOUT</span>}
+                        <span style={{fontSize: 10, color: isExpanded ? '#f97316' : 'rgba(255,255,255,0.2)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 0.5, transition: 'color 0.15s'}}>
+                          {isExpanded ? 'HIDE ▲' : 'PICKS ▼'}
+                        </span>
+                      </div>
+                    </td>
+                    <td style={{textAlign:'right', color: p.nhlTotal >= 0 ? '#6ee87a' : '#f87171', fontWeight: 600}}>{p.nhlTotal >= 0 ? '+' : ''}{p.nhlTotal}</td>
+                    <td style={{textAlign:'right', color: p.nbaTotal >= 0 ? '#6ee87a' : '#f87171', fontWeight: 600}}>{p.nbaTotal >= 0 ? '+' : ''}{p.nbaTotal}</td>
+                    <td style={{textAlign:'right'}}><span className={`score-val ${p.combined >= 0 ? 'score-pos' : 'score-neg'}`}>{p.combined >= 0 ? '+' : ''}{p.combined}</span></td>
+                  </tr>
+                  {isExpanded && (
+                    <tr key={`${p.id}-expand`}>
+                      <td colSpan={5} style={{padding: '0 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'rgba(249,115,22,0.03)'}}>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4}}>
+                          {playerPicks.length === 0 && (
+                            <div style={{fontSize: 13, color: 'rgba(255,255,255,0.3)', padding: '8px 0', fontFamily: "'Barlow', sans-serif"}}>No locked series yet.</div>
+                          )}
+                          {playerPicks.map(({ s, pick, pts }) => {
+                            const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
+                            return (
+                              <div key={s.id} style={{display: 'flex', alignItems: 'center', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, gap: 12, border: '1px solid rgba(255,255,255,0.05)'}}>
+                                <div style={{flex: 1}}>
+                                  <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: '#e8eaf0', marginBottom: 2}}>
+                                    {s.home_team} vs {s.away_team}
+                                  </div>
+                                  <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif"}}>
+                                    {s.league} · R{s.round}
+                                    {s.result_winner && <span style={{color: '#6ee87a', marginLeft: 6}}>· Final: {s.result_winner} in {s.result_games}</span>}
+                                    {!s.result_winner && <span style={{color: '#f97316', marginLeft: 6}}>· In progress</span>}
+                                  </div>
+                                </div>
+                                {pick ? (
+                                  <>
+                                    <span style={{background: tc.bg, color: tc.text, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 5}}>
+                                      {pick.picked_winner.split(' ').pop()}
+                                    </span>
+                                    <span style={{fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif", minWidth: 32}}>in {pick.picked_games}</span>
+                                    <span style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 17, fontWeight: 700, minWidth: 40, textAlign: 'right', color: pts === null ? 'rgba(255,255,255,0.3)' : pts > 0 ? '#6ee87a' : pts < 0 ? '#f87171' : 'rgba(255,255,255,0.4)'}}>
+                                      {pts === null ? '—' : pts > 0 ? `+${pts}` : pts}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span style={{fontSize: 12, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '3px 10px', background: 'rgba(248,113,113,0.1)', borderRadius: 5}}>NO PICK −4</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               )
             })}
           </tbody>
@@ -852,13 +1026,7 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                                   const hasPick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id)
                                   return (
                                     <td key={s.id} style={{textAlign: 'center', padding: '11px 8px'}}>
-                                      <span style={{
-                                        display: 'inline-block', padding: '2px 8px', borderRadius: 4,
-                                        fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
-                                        background: hasPick ? 'rgba(110,232,122,0.12)' : 'rgba(248,113,113,0.1)',
-                                        color: hasPick ? '#6ee87a' : '#f87171',
-                                        fontFamily: "'Barlow Condensed', sans-serif",
-                                      }}>
+                                      <span style={{display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: 0.5, background: hasPick ? 'rgba(110,232,122,0.12)' : 'rgba(248,113,113,0.1)', color: hasPick ? '#6ee87a' : '#f87171', fontFamily: "'Barlow Condensed', sans-serif"}}>
                                         {hasPick ? '✓' : '—'}
                                       </span>
                                     </td>
@@ -867,18 +1035,9 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                                 <td style={{padding: '11px 16px'}}>
                                   <div style={{display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end'}}>
                                     <div style={{width: 56, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden'}}>
-                                      <div style={{
-                                        height: '100%', borderRadius: 3,
-                                        width: `${pct}%`,
-                                        background: pct === 100 ? '#6ee87a' : pct > 0 ? '#f97316' : '#f87171',
-                                        transition: 'width 0.3s ease'
-                                      }} />
+                                      <div style={{height: '100%', borderRadius: 3, width: `${pct}%`, background: pct === 100 ? '#6ee87a' : pct > 0 ? '#f97316' : '#f87171', transition: 'width 0.3s ease'}} />
                                     </div>
-                                    <span style={{
-                                      fontSize: 12, fontWeight: 700, minWidth: 28, textAlign: 'right',
-                                      color: pct === 100 ? '#6ee87a' : pct > 0 ? '#f97316' : '#f87171',
-                                      fontFamily: "'Barlow Condensed', sans-serif",
-                                    }}>{picked}/{total}</span>
+                                    <span style={{fontSize: 12, fontWeight: 700, minWidth: 28, textAlign: 'right', color: pct === 100 ? '#6ee87a' : pct > 0 ? '#f97316' : '#f87171', fontFamily: "'Barlow Condensed', sans-serif"}}>{picked}/{total}</span>
                                   </div>
                                 </td>
                               </tr>
@@ -897,9 +1056,7 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
             <div style={{fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 16, lineHeight: 1.6}}>
               Generate a summary of all missing picks across all rounds and leagues. Copy and paste into your group chat.
             </div>
-            <button className="blast-btn" onClick={copyMissingSummary}>
-              📋 Copy Missing Picks Summary
-            </button>
+            <button className="blast-btn" onClick={copyMissingSummary}>📋 Copy Missing Picks Summary</button>
           </div>
         </div>
       )}
@@ -990,7 +1147,6 @@ const css = `
   .standings-table th { text-align: left; padding: 10px 16px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(255,255,255,0.25); border-bottom: 1px solid rgba(255,255,255,0.06); }
   .standings-table td { padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 14px; font-family: 'Barlow', sans-serif; }
   .standings-table tr:last-child td { border-bottom: none; }
-  .standings-table tr:hover td { background: rgba(255,255,255,0.02); }
   .rank-num { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; color: rgba(255,255,255,0.2); }
   .rank-1 { color: #f97316; } .rank-2 { color: #94a3b8; } .rank-3 { color: #b87333; }
   .payout-row td { background: rgba(249,115,22,0.04); }
