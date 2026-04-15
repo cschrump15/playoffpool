@@ -35,38 +35,60 @@ function calcPoints(round, pickedWinner, actualWinner, actualGames, pickedGames)
   return winPts + gameAdj
 }
 
-const TEAM_EMOJI = {
-  "Boston Bruins": "🐻", "Toronto Maple Leafs": "🍁",
-  "Florida Panthers": "🐆", "Tampa Bay Lightning": "⚡",
-  "Colorado Avalanche": "🏔️", "Dallas Stars": "⭐",
-  "Vegas Golden Knights": "⚔️", "LA Kings": "👑",
-  "Boston Celtics": "🍀", "Miami Heat": "🔥",
-  "Milwaukee Bucks": "🦌", "Indiana Pacers": "🏎️",
-  "Denver Nuggets": "⛏️", "LA Lakers": "💜",
-  "Oklahoma City Thunder": "⚡", "New Orleans Pelicans": "🦅",
-  "Edmonton Oilers": "🛢️", "Vancouver Canucks": "🐳",
-  "Carolina Hurricanes": "🌀", "New York Rangers": "🗽",
-  "Winnipeg Jets": "✈️", "St. Louis Blues": "🎵",
-  "Minnesota Wild": "🌲", "Seattle Kraken": "🐙",
-  "Cleveland Cavaliers": "⚔️", "Orlando Magic": "✨",
-  "New York Knicks": "🗽", "Philadelphia 76ers": "🔔",
-  "Minnesota Timberwolves": "🐺", "Golden State Warriors": "🌉",
-  "Houston Rockets": "🚀", "Memphis Grizzlies": "🐻",
+const TEAM_COLORS = {
+  "Boston Bruins":           { bg: "#FFB81C", text: "#000000" },
+  "Toronto Maple Leafs":     { bg: "#003E7E", text: "#ffffff" },
+  "Florida Panthers":        { bg: "#C8102E", text: "#ffffff" },
+  "Tampa Bay Lightning":     { bg: "#002868", text: "#ffffff" },
+  "Colorado Avalanche":      { bg: "#6F263D", text: "#ffffff" },
+  "Dallas Stars":            { bg: "#006847", text: "#ffffff" },
+  "Vegas Golden Knights":    { bg: "#B4975A", text: "#000000" },
+  "LA Kings":                { bg: "#A2AAAD", text: "#000000" },
+  "Edmonton Oilers":         { bg: "#FF4C00", text: "#ffffff" },
+  "Vancouver Canucks":       { bg: "#00843D", text: "#ffffff" },
+  "Carolina Hurricanes":     { bg: "#CC0000", text: "#ffffff" },
+  "New York Rangers":        { bg: "#0038A8", text: "#ffffff" },
+  "Winnipeg Jets":           { bg: "#004C97", text: "#ffffff" },
+  "St. Louis Blues":         { bg: "#002F87", text: "#ffffff" },
+  "Minnesota Wild":          { bg: "#154734", text: "#ffffff" },
+  "Seattle Kraken":          { bg: "#001628", text: "#99D9D9" },
+  "Boston Celtics":          { bg: "#007A33", text: "#ffffff" },
+  "Miami Heat":              { bg: "#98002E", text: "#ffffff" },
+  "Milwaukee Bucks":         { bg: "#00471B", text: "#ffffff" },
+  "Indiana Pacers":          { bg: "#002D62", text: "#ffffff" },
+  "Denver Nuggets":          { bg: "#0E2240", text: "#FEC524" },
+  "LA Lakers":               { bg: "#552583", text: "#FDB927" },
+  "Oklahoma City Thunder":   { bg: "#007AC1", text: "#ffffff" },
+  "New Orleans Pelicans":    { bg: "#0C2340", text: "#C8102E" },
+  "Cleveland Cavaliers":     { bg: "#860038", text: "#ffffff" },
+  "Orlando Magic":           { bg: "#0077C0", text: "#ffffff" },
+  "New York Knicks":         { bg: "#006BB6", text: "#ffffff" },
+  "Philadelphia 76ers":      { bg: "#006BB6", text: "#ffffff" },
+  "Minnesota Timberwolves":  { bg: "#0C2340", text: "#236192" },
+  "Golden State Warriors":   { bg: "#1D428A", text: "#FFC72C" },
+  "Houston Rockets":         { bg: "#CE1141", text: "#ffffff" },
+  "Memphis Grizzlies":       { bg: "#5D76A9", text: "#12173F" },
 }
 
 function MobileNav({ page, setPage, isAdmin }) {
   const [open, setOpen] = useState(false)
+  const pages = [
+    { key: 'picks', label: 'My Picks' },
+    { key: 'standings', label: 'Standings' },
+    { key: 'distributions', label: 'Pick Distributions' },
+    { key: 'scoring', label: 'Scoring Rules' },
+  ]
+  if (isAdmin) pages.push({ key: 'admin', label: 'Commissioner' })
   return (
     <>
       <button className="mobile-menu" onClick={() => setOpen(!open)}>☰</button>
       {open && (
         <div className="mobile-dropdown">
-          {['picks','standings','distributions','scoring'].map(p => (
-            <button key={p} className={page === p ? 'active' : ''} onClick={() => { setPage(p); setOpen(false) }}>
-              {p === 'picks' ? 'My Picks' : p === 'standings' ? 'Standings' : p === 'distributions' ? 'Pick Distributions' : 'Scoring Rules'}
+          {pages.map(p => (
+            <button key={p.key} className={page === p.key ? 'active' : ''} onClick={() => { setPage(p.key); setOpen(false) }}>
+              {p.label}
             </button>
           ))}
-          {isAdmin && <button className={page === 'admin' ? 'active' : ''} onClick={() => { setPage('admin'); setOpen(false) }}>Admin</button>}
         </div>
       )}
     </>
@@ -84,8 +106,8 @@ export default function PlayoffPool() {
   const [allPicks, setAllPicks] = useState([])
   const [loading, setLoading] = useState(false)
 
-  function showToast(msg) {
-    setToast(msg)
+  function showToast(msg, type = 'success') {
+    setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
   }
 
@@ -219,16 +241,15 @@ export default function PlayoffPool() {
         <div className="content">
           <nav className="nav">
             <div className="nav-logo">
-              <span style={{color:"#f59e0b"}}>2026 </span>
-              <span style={{color:"#e8eaf0"}}>PLAYOFF </span>
-              <span style={{color:"#3b82f6"}}>POOL</span>
+              <span className="nav-year">2026</span>
+              <span className="nav-title">Playoff Pool</span>
             </div>
             <div className="nav-tabs">
               <button className={`nav-tab ${page === 'picks' ? 'active' : ''}`} onClick={() => setPage('picks')}>My Picks</button>
               <button className={`nav-tab ${page === 'standings' ? 'active' : ''}`} onClick={() => setPage('standings')}>Standings</button>
               <button className={`nav-tab ${page === 'distributions' ? 'active' : ''}`} onClick={() => setPage('distributions')}>Pick Distributions</button>
               <button className={`nav-tab ${page === 'scoring' ? 'active' : ''}`} onClick={() => setPage('scoring')}>Scoring Rules</button>
-              {user.is_admin && <button className={`nav-tab ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>Admin</button>}
+              {user.is_admin && <button className={`nav-tab ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>Commissioner</button>}
             </div>
             <MobileNav page={page} setPage={setPage} isAdmin={user.is_admin} />
             <div className="nav-user">
@@ -241,11 +262,11 @@ export default function PlayoffPool() {
             {page === 'standings' && <StandingsPage participants={participants} />}
             {page === 'distributions' && <DistributionsPage series={series} allPicks={allPicks} participants={participants} />}
             {page === 'scoring' && <ScoringRulesPage />}
-            {page === 'admin' && user.is_admin && <AdminPage series={series} toggleLock={toggleLock} enterResult={enterResult} participants={participants} showToast={showToast} />}
+            {page === 'admin' && user.is_admin && <AdminPage series={series} toggleLock={toggleLock} enterResult={enterResult} participants={participants} allPicks={allPicks} showToast={showToast} />}
           </main>
         </div>
       </div>
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className={`toast ${toast.type === 'error' ? 'toast-error' : ''}`}>{toast.msg}</div>}
     </>
   )
 }
@@ -276,12 +297,11 @@ function LoginScreen({ onLogin, onRegister, loading }) {
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <div className="login-title">
-          <span style={{color:"#f59e0b"}}>2026 </span>
-          <span style={{color:"#e8eaf0"}}>PLAYOFF </span>
-          <span style={{color:"#3b82f6"}}>POOL</span>
+        <div className="login-logo">
+          <span className="login-year">2026</span>
+          <span className="login-title">Playoff Pool</span>
         </div>
-        <div className="login-sub">{new Date().getFullYear()} NHL & NBA Playoffs</div>
+        <div className="login-sub">NHL & NBA Playoffs</div>
         {error && <div className="error-msg">{error}</div>}
         <div className="field-label">Full Name</div>
         <input className="field-input" placeholder="e.g. Alex Thompson" value={name} onChange={e => setName(e.target.value)} />
@@ -314,8 +334,8 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
   const currentSeries = series[league]
   const rounds = [...new Set(currentSeries.map(s => s.round))].sort((a,b) => b - a)
   const maxRound = rounds[0] || 1
-
   const [collapsed, setCollapsed] = useState({})
+
   useEffect(() => {
     const init = {}
     rounds.forEach(r => { init[r] = r < maxRound })
@@ -331,9 +351,7 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
   if (currentSeries.length === 0) return (
     <div className="page">
       <div className="page-title">My Picks</div>
-      <div style={{color: 'rgba(255,255,255,0.4)', marginTop: 40, textAlign: 'center'}}>
-        No series have been added yet. Check back soon!
-      </div>
+      <div style={{color: 'rgba(255,255,255,0.4)', marginTop: 40, textAlign: 'center'}}>No series have been added yet. Check back soon!</div>
     </div>
   )
 
@@ -361,30 +379,30 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
               onClick={() => !isCurrentRound && setCollapsed(prev => ({ ...prev, [r]: !prev[r] }))}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '14px 20px', borderRadius: isCollapsed ? 12 : '12px 12px 0 0',
-                background: isCurrentRound ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.04)',
-                border: `1px solid ${isCurrentRound ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                padding: '14px 20px', borderRadius: isCollapsed ? 8 : '8px 8px 0 0',
+                background: isCurrentRound ? 'rgba(201,149,42,0.08)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${isCurrentRound ? 'rgba(201,149,42,0.3)' : 'rgba(255,255,255,0.07)'}`,
                 borderBottom: !isCollapsed ? 'none' : undefined,
                 cursor: isCurrentRound ? 'default' : 'pointer',
               }}
             >
               <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-                <div style={{fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, color: isCurrentRound ? '#60a5fa' : 'rgba(255,255,255,0.5)'}}>
-                  Round {r} <span style={{fontSize: 13, fontFamily: "'DM Sans',sans-serif", fontWeight: 400, letterSpacing: 0, color: 'rgba(255,255,255,0.3)'}}> · {ROUND_NAMES[r]}</span>
+                <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 2, color: isCurrentRound ? '#c9952a' : 'rgba(255,255,255,0.4)', textTransform: 'uppercase'}}>
+                  Round {r} <span style={{fontSize: 13, fontFamily: "'Barlow', sans-serif", fontWeight: 400, letterSpacing: 0, color: 'rgba(255,255,255,0.3)'}}> · {ROUND_NAMES[r]}</span>
                 </div>
-                {isCurrentRound && <span style={{fontSize: 11, fontWeight: 700, letterSpacing: 1, padding: '3px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.2)', color: '#60a5fa'}}>ACTIVE</span>}
+                {isCurrentRound && <span style={{fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: '3px 8px', borderRadius: 4, background: 'rgba(201,149,42,0.15)', color: '#c9952a', textTransform: 'uppercase'}}>Active</span>}
               </div>
               <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
                 {!isCurrentRound && (
                   <div style={{fontSize: 13, color: 'rgba(255,255,255,0.4)'}}>
-                    {pickedCount}/{roundSeries.length} picks · <span style={{color: roundPts >= 0 ? '#86efac' : '#fca5a5', fontWeight: 700}}>{roundPts >= 0 ? '+' : ''}{roundPts} pts</span>
+                    {pickedCount}/{roundSeries.length} picks · <span style={{color: roundPts >= 0 ? '#6ee87a' : '#f87171', fontWeight: 700}}>{roundPts >= 0 ? '+' : ''}{roundPts} pts</span>
                   </div>
                 )}
                 {!isCurrentRound && <div style={{color: 'rgba(255,255,255,0.3)', fontSize: 18, transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)'}}>▾</div>}
               </div>
             </div>
             {!isCollapsed && (
-              <div style={{border: `1px solid ${isCurrentRound ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`, borderTop: 'none', borderRadius: '0 0 12px 12px', padding: 16, background: 'rgba(255,255,255,0.01)'}}>
+              <div style={{border: `1px solid ${isCurrentRound ? 'rgba(201,149,42,0.3)' : 'rgba(255,255,255,0.07)'}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 16, background: 'rgba(255,255,255,0.01)'}}>
                 <div className="series-grid">
                   {roundSeries.map(s => {
                     const submitted = userPicks[s.id]
@@ -397,16 +415,33 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
                     }
                     return (
                       <div key={s.id} className={`series-card ${s.locked ? 'locked' : isSubmitted ? 'submitted' : ''}`}>
-                        <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 12, letterSpacing: 1}}>
-                          GAME 1 · {s.game1_time ? new Date(s.game1_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'TBD'}
+                        <div style={{fontSize: 10, color: 'rgba(255,255,255,0.25)', marginBottom: 14, letterSpacing: 1, textTransform: 'uppercase'}}>
+                          Game 1 · {s.game1_time ? new Date(s.game1_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'TBD'}
                         </div>
                         <div className="matchup">
-                          {[s.home_team, s.away_team].map(team => (
-                            <button key={team} className={`team-opt ${displayPick?.winner === team ? 'selected' : ''}`} disabled={s.locked} onClick={() => setPick(s.id, 'winner', team)}>
-                              <div style={{fontSize: 28, marginBottom: 6}}>{TEAM_EMOJI[team] || '🏒'}</div>
-                              <div>{team}</div>
-                            </button>
-                          ))}
+                          {[s.home_team, s.away_team].map(team => {
+                            const isSelected = displayPick?.winner === team
+                            const tc = TEAM_COLORS[team] || { bg: '#2a2f3e', text: '#ffffff' }
+                            const isWinner = s.result_winner === team
+                            return (
+                              <button
+                                key={team}
+                                className="team-opt"
+                                disabled={s.locked}
+                                onClick={() => setPick(s.id, 'winner', team)}
+                                style={{
+                                  background: isSelected ? tc.bg : 'transparent',
+                                  color: isSelected ? tc.text : 'rgba(255,255,255,0.6)',
+                                  borderColor: isWinner && s.result_winner ? '#6ee87a' : isSelected ? tc.bg : 'rgba(255,255,255,0.1)',
+                                  borderWidth: isWinner && s.result_winner ? 2 : 1.5,
+                                }}
+                              >
+                                <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, letterSpacing: 0.5}}>{team}</div>
+                                {isSelected && !s.result_winner && <div style={{fontSize: 10, fontWeight: 700, letterSpacing: 1, marginTop: 4, opacity: 0.8, textTransform: 'uppercase'}}>Picked</div>}
+                                {isWinner && s.result_winner && <div style={{fontSize: 10, fontWeight: 700, letterSpacing: 1, marginTop: 4, color: '#6ee87a', textTransform: 'uppercase'}}>Winner ✓</div>}
+                              </button>
+                            )
+                          })}
                         </div>
                         <div className="games-row">
                           <div className="games-label">Series Length</div>
@@ -452,9 +487,7 @@ function DistributionsPage({ series, allPicks, participants }) {
         <button className={`league-tab ${league === 'NHL' ? 'active-nhl' : ''}`} onClick={() => setLeague('NHL')}>🏒 NHL Playoffs</button>
         <button className={`league-tab ${league === 'NBA' ? 'active-nba' : ''}`} onClick={() => setLeague('NBA')}>🏀 NBA Playoffs</button>
       </div>
-      {currentSeries.length === 0 && (
-        <div style={{color: 'rgba(255,255,255,0.4)', marginTop: 40, textAlign: 'center'}}>No series added yet.</div>
-      )}
+      {currentSeries.length === 0 && <div style={{color: 'rgba(255,255,255,0.4)', marginTop: 40, textAlign: 'center'}}>No series added yet.</div>}
       <div className="series-grid">
         {currentSeries.map(s => {
           const seriesPicks = allPicks.filter(p => p.series_id === s.id)
@@ -463,10 +496,12 @@ function DistributionsPage({ series, allPicks, participants }) {
           const totalPicks = seriesPicks.length
           const homePct = totalPicks > 0 ? Math.round((homePicks / totalPicks) * 100) : 50
           const awayPct = totalPicks > 0 ? Math.round((awayPicks / totalPicks) * 100) : 50
+          const homeColor = TEAM_COLORS[s.home_team]?.bg || '#c9952a'
+          const awayColor = TEAM_COLORS[s.away_team]?.bg || '#60a5fa'
           return (
             <div key={s.id} className="series-card">
-              <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 12, letterSpacing: 1}}>
-                ROUND {s.round} · {totalPicks}/{total} picks submitted
+              <div style={{fontSize: 10, color: 'rgba(255,255,255,0.25)', marginBottom: 12, letterSpacing: 1, textTransform: 'uppercase'}}>
+                Round {s.round} · {totalPicks}/{total} picks submitted
               </div>
               {!s.locked ? (
                 <div style={{textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 13, padding: '20px 0'}}>
@@ -476,24 +511,25 @@ function DistributionsPage({ series, allPicks, participants }) {
                 <>
                   <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 8}}>
                     <div style={{textAlign: 'center', flex: 1}}>
-                      <div style={{fontSize: 24, marginBottom: 4}}>{TEAM_EMOJI[s.home_team] || '🏒'}</div>
-                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2}}>{s.home_team}</div>
-                      <div style={{fontSize: 22, fontWeight: 700, color: '#60a5fa'}}>{homePct}%</div>
+                      <div style={{width: 32, height: 4, borderRadius: 2, background: homeColor, margin: '0 auto 8px'}} />
+                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700}}>{s.home_team}</div>
+                      <div style={{fontSize: 22, fontWeight: 700, color: homeColor}}>{homePct}%</div>
                       <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{homePicks} picks</div>
                     </div>
-                    <div style={{display: 'flex', alignItems: 'center', padding: '0 12px', color: 'rgba(255,255,255,0.2)', fontFamily: "'Bebas Neue',sans-serif", fontSize: 16}}>VS</div>
+                    <div style={{display: 'flex', alignItems: 'center', padding: '0 12px', color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700}}>VS</div>
                     <div style={{textAlign: 'center', flex: 1}}>
-                      <div style={{fontSize: 24, marginBottom: 4}}>{TEAM_EMOJI[s.away_team] || '🏒'}</div>
-                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2}}>{s.away_team}</div>
-                      <div style={{fontSize: 22, fontWeight: 700, color: '#60a5fa'}}>{awayPct}%</div>
+                      <div style={{width: 32, height: 4, borderRadius: 2, background: awayColor, margin: '0 auto 8px'}} />
+                      <div style={{fontSize: 12, color: '#e8eaf0', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700}}>{s.away_team}</div>
+                      <div style={{fontSize: 22, fontWeight: 700, color: awayColor}}>{awayPct}%</div>
                       <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{awayPicks} picks</div>
                     </div>
                   </div>
-                  <div style={{height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 8}}>
-                    <div style={{height: '100%', width: `${homePct}%`, background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: 3, transition: 'width 0.5s ease'}} />
+                  <div style={{height: 5, borderRadius: 3, overflow: 'hidden', marginTop: 8, display: 'flex'}}>
+                    <div style={{width: `${homePct}%`, background: homeColor, transition: 'width 0.5s ease'}} />
+                    <div style={{flex: 1, background: awayColor}} />
                   </div>
                   {s.result_winner && (
-                    <div style={{marginTop: 10, fontSize: 11, color: '#86efac', textAlign: 'center'}}>
+                    <div style={{marginTop: 10, fontSize: 11, color: '#6ee87a', textAlign: 'center'}}>
                       ✓ Result: <strong>{s.result_winner}</strong> in {s.result_games}
                     </div>
                   )}
@@ -514,108 +550,64 @@ function ScoringRulesPage() {
     { round: 3, name: 'Conference Finals',    winPts: 6, gameBonus: 2 },
     { round: 4, name: 'Stanley Cup / Finals', winPts: 8, gameBonus: 3 },
   ]
-
   return (
     <div className="page">
       <div className="page-title">Scoring Rules</div>
       <div className="page-sub">How points are calculated for each pick.</div>
-
-      <div style={{marginBottom: 32}}>
-        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Points for Picking the Correct Winner</div>
-        <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden'}}>
-          <table style={{width: '100%', borderCollapse: 'collapse'}}>
-            <thead>
-              <tr>
-                <th style={{textAlign:'left', padding:'10px 20px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.3)', borderBottom:'1px solid rgba(255,255,255,0.06)'}}>Round</th>
-                <th style={{textAlign:'center', padding:'10px 20px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.3)', borderBottom:'1px solid rgba(255,255,255,0.06)'}}>Winner Pts</th>
-                <th style={{textAlign:'center', padding:'10px 20px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.3)', borderBottom:'1px solid rgba(255,255,255,0.06)'}}>Exact Games Bonus</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rounds.map((r, i) => (
-                <tr key={r.round} style={{background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)'}}>
-                  <td style={{padding:'14px 20px', fontSize:14}}>
-                    <span style={{fontFamily:"'Bebas Neue',sans-serif", fontSize:16, letterSpacing:1, color:'#60a5fa', marginRight:10}}>R{r.round}</span>
-                    {r.name}
-                  </td>
-                  <td style={{padding:'14px 20px', textAlign:'center'}}>
-                    <span style={{fontWeight:700, fontSize:20, color:'#86efac'}}>+{r.winPts}</span>
-                  </td>
-                  <td style={{padding:'14px 20px', textAlign:'center'}}>
-                    <span style={{fontWeight:700, fontSize:20, color:'#fbbf24'}}>+{r.gameBonus}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="scoring-intro-card">
+        <div className="scoring-intro-title">How It Works</div>
+        <p style={{fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7}}>Every series outcome sits on an 8-position scale from Winner in 4 to Loser in 4. Your points adjustment is based on how far your pick sits from the actual result — the further away, the worse the penalty.</p>
+      </div>
+      <div className="section-label">Points by Round</div>
+      <div className="round-grid">
+        {rounds.map(r => (
+          <div key={r.round} className="round-card">
+            <div className="round-code">R{r.round}</div>
+            <div className="round-name-label">{r.name}</div>
+            <div className="round-pts">{r.winPts} <span>pts</span></div>
+            <div className="round-bonus">+{r.gameBonus} exact games bonus</div>
+          </div>
+        ))}
+        <div className="round-card" style={{borderColor: 'rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.05)'}}>
+          <div className="round-code" style={{color: '#f87171'}}>—</div>
+          <div className="round-name-label">No Pick</div>
+          <div className="round-pts" style={{color: '#f87171'}}>−4 <span>pts</span></div>
+          <div className="round-bonus" style={{color: '#f87171'}}>Maximum penalty</div>
         </div>
       </div>
-
-      <div style={{marginBottom: 32}}>
-        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>The 8-Position Scale</div>
-        <div style={{fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 16, lineHeight: 1.7}}>
-          Every possible series outcome sits on a linear scale of 8 positions. Your score adjustment is based on how far your pick is from the actual result — regardless of which team you picked.
-        </div>
-        <div style={{display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 320}}>
-          {[
-            { label: 'Winner in 4', pos: 1 },
-            { label: 'Winner in 5', pos: 2 },
-            { label: 'Winner in 6', pos: 3 },
-            { label: 'Winner in 7', pos: 4 },
-            { label: 'Loser in 7',  pos: 5 },
-            { label: 'Loser in 6',  pos: 6 },
-            { label: 'Loser in 5',  pos: 7 },
-            { label: 'Loser in 4',  pos: 8 },
-          ].map((item, i) => (
-            <div key={i} style={{display: 'flex', alignItems: 'center', gap: 12}}>
-              <div style={{width: 24, height: 24, borderRadius: '50%', background: i < 4 ? 'rgba(59,130,246,0.2)' : 'rgba(239,68,68,0.15)', border: `1px solid ${i < 4 ? 'rgba(59,130,246,0.4)' : 'rgba(239,68,68,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i < 4 ? '#60a5fa' : '#fca5a5', flexShrink: 0}}>{item.pos}</div>
-              <div style={{fontSize: 14, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)'}}>{item.label}</div>
-            </div>
-          ))}
-        </div>
+      <div className="section-label">The 8-Position Scale</div>
+      <div style={{display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 320, marginBottom: 32}}>
+        {[
+          { label: 'Winner in 4', pos: 1 }, { label: 'Winner in 5', pos: 2 },
+          { label: 'Winner in 6', pos: 3 }, { label: 'Winner in 7', pos: 4 },
+          { label: 'Loser in 7',  pos: 5 }, { label: 'Loser in 6',  pos: 6 },
+          { label: 'Loser in 5',  pos: 7 }, { label: 'Loser in 4',  pos: 8 },
+        ].map((item, i) => (
+          <div key={i} style={{display: 'flex', alignItems: 'center', gap: 12}}>
+            <div style={{width: 24, height: 24, borderRadius: '50%', background: i < 4 ? 'rgba(201,149,42,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(201,149,42,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i < 4 ? '#c9952a' : '#f87171', flexShrink: 0}}>{item.pos}</div>
+            <div style={{fontSize: 14, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)'}}>{item.label}</div>
+          </div>
+        ))}
       </div>
-
-      <div style={{marginBottom: 32}}>
-        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Games Adjustment</div>
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10}}>
-          {[
-            { diff: 0, label: 'Exact',     pts: '+bonus', color: '#fbbf24' },
-            { diff: 1, label: 'Off by 1',  pts: '±0',     color: '#e8eaf0' },
-            { diff: 2, label: 'Off by 2',  pts: '−1',     color: '#fca5a5' },
-            { diff: 3, label: 'Off by 3',  pts: '−2',     color: '#fca5a5' },
-            { diff: 4, label: 'Off by 4',  pts: '−3',     color: '#fca5a5' },
-            { diff: 5, label: 'Off by 5+', pts: '−4',     color: '#fca5a5' },
-          ].map(g => (
-            <div key={g.diff} style={{background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: 16, textAlign: 'center'}}>
-              <div style={{fontSize: 11, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8}}>{g.label}</div>
-              <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 26, letterSpacing: 1, color: g.color}}>{g.pts}</div>
-            </div>
-          ))}
-        </div>
+      <div className="section-label">Examples — Round 1</div>
+      <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 32}}>
+        {[
+          { scenario: 'Bruins win in 6 · Pick: Bruins in 6',    pts: '+5', color: '#6ee87a', note: 'Correct + exact → +4 +1' },
+          { scenario: 'Bruins win in 6 · Pick: Bruins in 5',    pts: '+4', color: '#6ee87a', note: 'Correct + off by 1 → +4 +0' },
+          { scenario: 'Bruins win in 6 · Pick: Bruins in 4',    pts: '+3', color: '#6ee87a', note: 'Correct + off by 2 → +4 −1' },
+          { scenario: 'Bruins win in 6 · Pick: Lightning in 7', pts: '−2', color: '#f87171', note: 'Wrong + off by 2 → 0 −1' },
+          { scenario: 'Bruins win in 6 · Pick: Lightning in 6', pts: '−2', color: '#f87171', note: 'Wrong + off by 3 → 0 −2' },
+          { scenario: 'No pick submitted',                       pts: '−4', color: '#f87171', note: 'Maximum penalty applied' },
+        ].map((ex, i) => (
+          <div key={i} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '14px 16px'}}>
+            <div style={{fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 8}}>{ex.scenario}</div>
+            <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 24, fontWeight: 800, letterSpacing: 1, color: ex.color, marginBottom: 4}}>{ex.pts} pts</div>
+            <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{ex.note}</div>
+          </div>
+        ))}
       </div>
-
-      <div style={{marginBottom: 32}}>
-        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Examples — Round 1</div>
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
-          {[
-            { scenario: 'Bruins win in 6 · Pick: Bruins in 6',    pts: '+5', color: '#86efac', note: 'Correct + exact → +4 +1' },
-            { scenario: 'Bruins win in 6 · Pick: Bruins in 5',    pts: '+4', color: '#86efac', note: 'Correct + off by 1 → +4 +0' },
-            { scenario: 'Bruins win in 6 · Pick: Bruins in 4',    pts: '+3', color: '#86efac', note: 'Correct + off by 2 → +4 −1' },
-            { scenario: 'Bruins win in 6 · Pick: Lightning in 7', pts: '−2', color: '#fca5a5', note: 'Wrong + off by 2 → 0 −1' },
-            { scenario: 'Bruins win in 6 · Pick: Lightning in 6', pts: '−2', color: '#fca5a5', note: 'Wrong + off by 3 → 0 −2' },
-            { scenario: 'No pick submitted',                       pts: '−4', color: '#fca5a5', note: 'Maximum penalty applied' },
-          ].map((ex, i) => (
-            <div key={i} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px 16px'}}>
-              <div style={{fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 8}}>{ex.scenario}</div>
-              <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, letterSpacing: 1, color: ex.color, marginBottom: 4}}>{ex.pts} pts</div>
-              <div style={{fontSize: 11, color: 'rgba(255,255,255,0.3)'}}>{ex.note}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.06)', padding: '20px 24px'}}>
-        <div style={{fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 16, color: 'rgba(255,255,255,0.8)'}}>Payouts</div>
+      <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', padding: '20px 24px'}}>
+        <div className="section-label" style={{marginBottom: 14}}>Payouts</div>
         <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10}}>
           {[
             { label: '🥇 Combined 1st', desc: 'Highest total NHL + NBA score' },
@@ -626,9 +618,9 @@ function ScoringRulesPage() {
             { label: '🏀 NBA 1st',      desc: 'Highest NBA-only score' },
             { label: '🏀 NBA 2nd',      desc: 'Second highest NBA-only score' },
           ].map((p, i) => (
-            <div key={i} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px 16px', textAlign: 'center'}}>
-              <div style={{fontSize: 14, fontWeight: 700, color: '#e8eaf0', marginBottom: 6}}>{p.label}</div>
-              <div style={{fontSize: 12, color: 'rgba(255,255,255,0.35)'}}>{p.desc}</div>
+            <div key={i} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '14px 16px', textAlign: 'center'}}>
+              <div style={{fontSize: 14, fontWeight: 600, color: '#e8eaf0', marginBottom: 6}}>{p.label}</div>
+              <div style={{fontSize: 12, color: 'rgba(255,255,255,0.3)'}}>{p.desc}</div>
             </div>
           ))}
         </div>
@@ -654,11 +646,11 @@ function StandingsPage({ participants }) {
         <button className={`std-tab ${view === 'nhl' ? 'active' : ''}`} onClick={() => setView('nhl')}>🏒 NHL</button>
         <button className={`std-tab ${view === 'nba' ? 'active' : ''}`} onClick={() => setView('nba')}>🏀 NBA</button>
       </div>
-      <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden'}}>
+      <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden'}}>
         <table className="standings-table">
           <thead>
             <tr>
-              <th style={{width: 60}}>#</th>
+              <th style={{width: 50}}>#</th>
               <th>Participant</th>
               <th style={{textAlign:'right'}}>NHL</th>
               <th style={{textAlign:'right'}}>NBA</th>
@@ -669,14 +661,17 @@ function StandingsPage({ participants }) {
             {sorted.map((p, i) => {
               const rank = i + 1
               const isPayout = rank <= payoutCount
-              const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 && view === 'combined' ? '🥉' : rank
+              const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : (rank === 3 && view === 'combined') ? '🥉' : rank
               return (
                 <tr key={p.id} className={isPayout ? 'payout-row' : ''}>
-                  <td><span className={`rank-num ${rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : ''}`}>{medal}</span></td>
-                  <td>{p.full_name}{isPayout && <span className={`payout-badge ${rank === 1 ? 'payout-gold' : rank === 2 ? 'payout-silver' : 'payout-bronze'}`}>PAYOUT</span>}</td>
-                  <td style={{textAlign:'right', color: p.nhlTotal >= 0 ? '#86efac' : '#fca5a5', fontWeight: 600}}>{p.nhlTotal >= 0 ? '+' : ''}{p.nhlTotal}</td>
-                  <td style={{textAlign:'right', color: p.nbaTotal >= 0 ? '#86efac' : '#fca5a5', fontWeight: 600}}>{p.nbaTotal >= 0 ? '+' : ''}{p.nbaTotal}</td>
-                  <td style={{textAlign:'right'}}><span className={`score-val ${p.combined >= 0 ? 'score-pos' : ''}`}>{p.combined >= 0 ? '+' : ''}{p.combined}</span></td>
+                  <td><span className={`rank-num ${rank===1?'rank-1':rank===2?'rank-2':rank===3?'rank-3':''}`}>{medal}</span></td>
+                  <td>
+                    {p.full_name}
+                    {isPayout && <span className={`payout-badge ${rank===1?'payout-gold':rank===2?'payout-silver':'payout-bronze'}`}>PAYOUT</span>}
+                  </td>
+                  <td style={{textAlign:'right', color: p.nhlTotal >= 0 ? '#6ee87a' : '#f87171', fontWeight: 600}}>{p.nhlTotal >= 0 ? '+' : ''}{p.nhlTotal}</td>
+                  <td style={{textAlign:'right', color: p.nbaTotal >= 0 ? '#6ee87a' : '#f87171', fontWeight: 600}}>{p.nbaTotal >= 0 ? '+' : ''}{p.nbaTotal}</td>
+                  <td style={{textAlign:'right'}}><span className={`score-val ${p.combined >= 0 ? 'score-pos' : 'score-neg'}`}>{p.combined >= 0 ? '+' : ''}{p.combined}</span></td>
                 </tr>
               )
             })}
@@ -687,181 +682,339 @@ function StandingsPage({ participants }) {
   )
 }
 
-function AdminPage({ series, toggleLock, enterResult, participants, showToast }) {
+function AdminPage({ series, toggleLock, enterResult, participants, allPicks, showToast }) {
   const allSeries = [...series.NHL, ...series.NBA]
   const [resultInputs, setResultInputs] = useState({})
+  const [adminTab, setAdminTab] = useState('series')
+
+  // Build pick status data
+  const allRounds = [...new Set(allSeries.map(s => s.round))].sort()
+  const leagues = ['NHL', 'NBA']
+
+  function getSeriesShortName(s) {
+    const home = s.home_team.split(' ').pop()
+    const away = s.away_team.split(' ').pop()
+    return `${home} vs ${away}`
+  }
+
+  function generateMissingSummary() {
+    const lines = ['🏒🏀 2026 PLAYOFF POOL — MISSING PICKS\n']
+    let anyMissing = false
+    leagues.forEach(lg => {
+      allRounds.forEach(r => {
+        const roundSeries = (series[lg] || []).filter(s => s.round === r && s.locked)
+        if (roundSeries.length === 0) return
+        const missingByPerson = {}
+        participants.forEach(u => {
+          const missing = roundSeries.filter(s => !allPicks.find(p => p.user_id === u.id && p.series_id === s.id))
+          if (missing.length > 0) {
+            missingByPerson[u.full_name] = missing.map(s => getSeriesShortName(s))
+          }
+        })
+        if (Object.keys(missingByPerson).length > 0) {
+          anyMissing = true
+          lines.push(`${lg} Round ${r}:`)
+          Object.entries(missingByPerson).forEach(([name, series]) => {
+            lines.push(`  ${name} — ${series.join(', ')}`)
+          })
+          lines.push('')
+        }
+      })
+    })
+    if (!anyMissing) lines.push('Everyone has submitted all their picks! 🎉\n')
+    lines.push('Submit picks at: chrisnbanhlplayoffpool.vercel.app')
+    return lines.join('\n')
+  }
+
+  function copyMissingSummary() {
+    const text = generateMissingSummary()
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Summary copied to clipboard! ✓')
+    }).catch(() => {
+      showToast('Could not copy — try again', 'error')
+    })
+  }
 
   return (
     <div className="page">
-      <div className="page-title">Admin Panel</div>
-      <div className="page-sub">Manage series, enter results, and send notifications.</div>
-      <div className="admin-grid">
-        <div className="admin-card" style={{gridColumn: '1 / -1'}}>
-          <h3>Series Management</h3>
-          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px'}}>
-            {['NHL','NBA'].map(lg => (
-              <div key={lg}>
-                <div style={{fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.3)', marginBottom: 10, textTransform:'uppercase'}}>{lg}</div>
-                {series[lg].map(s => (
-                  <div key={s.id} style={{padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
-                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s.result_winner ? 0 : 8}}>
-                      <span style={{fontSize: 12}}>{s.home_team} vs {s.away_team}</span>
-                      <button className={`lock-toggle ${s.locked ? 'locked-btn' : 'unlocked'}`} onClick={() => toggleLock(lg, s.id)}>
-                        {s.locked ? 'UNLOCK' : 'LOCK'}
-                      </button>
-                    </div>
-                    {!s.result_winner && s.locked && (
-                      <div style={{display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap'}}>
-                        <select
-                          style={{flex: 1, padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 12}}
-                          onChange={e => setResultInputs(prev => ({ ...prev, [s.id]: { ...prev[s.id], winner: e.target.value } }))}
-                        >
-                          <option value="">Winner...</option>
-                          <option>{s.home_team}</option>
-                          <option>{s.away_team}</option>
-                        </select>
-                        <select
-                          style={{width: 70, padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 12}}
-                          onChange={e => setResultInputs(prev => ({ ...prev, [s.id]: { ...prev[s.id], games: parseInt(e.target.value) } }))}
-                        >
-                          <option value="">Gms</option>
-                          {[4,5,6,7].map(g => <option key={g}>{g}</option>)}
-                        </select>
-                        <button
-                          onClick={() => { const r = resultInputs[s.id]; if (r?.winner && r?.games) enterResult(s.id, r.winner, r.games) }}
-                          style={{padding: '5px 12px', borderRadius: 6, background: 'rgba(34,197,94,0.2)', border: '1px solid rgba(34,197,94,0.3)', color: '#86efac', fontSize: 12, cursor: 'pointer'}}
-                        >Save</button>
+      <div className="page-title">Commissioner</div>
+      <div className="page-sub">Manage series, enter results, and track participant picks.</div>
+
+      <div className="standings-tabs" style={{marginBottom: 24}}>
+        <button className={`std-tab ${adminTab === 'series' ? 'active' : ''}`} onClick={() => setAdminTab('series')}>Series Management</button>
+        <button className={`std-tab ${adminTab === 'picks' ? 'active' : ''}`} onClick={() => setAdminTab('picks')}>Pick Status</button>
+      </div>
+
+      {adminTab === 'series' && (
+        <div className="admin-grid">
+          <div className="admin-card" style={{gridColumn: '1 / -1'}}>
+            <h3>Series Management</h3>
+            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px'}}>
+              {['NHL','NBA'].map(lg => (
+                <div key={lg}>
+                  <div style={{fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.3)', marginBottom: 10, textTransform:'uppercase'}}>{lg}</div>
+                  {series[lg].map(s => (
+                    <div key={s.id} style={{padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
+                      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s.result_winner ? 0 : 8}}>
+                        <span style={{fontSize: 12}}>{s.home_team} vs {s.away_team}</span>
+                        <button className={`lock-toggle ${s.locked ? 'locked-btn' : 'unlocked'}`} onClick={() => toggleLock(lg, s.id)}>
+                          {s.locked ? 'Unlock' : 'Lock'}
+                        </button>
                       </div>
-                    )}
-                    {s.result_winner && (
-                      <div style={{fontSize: 11, color: '#86efac', marginTop: 4}}>✓ {s.result_winner} in {s.result_games}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ))}
+                      {!s.result_winner && s.locked && (
+                        <div style={{display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap'}}>
+                          <select
+                            style={{flex: 1, padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 12, fontFamily: "'Barlow', sans-serif"}}
+                            onChange={e => setResultInputs(prev => ({ ...prev, [s.id]: { ...prev[s.id], winner: e.target.value } }))}
+                          >
+                            <option value="">Winner...</option>
+                            <option>{s.home_team}</option>
+                            <option>{s.away_team}</option>
+                          </select>
+                          <select
+                            style={{width: 70, padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 12, fontFamily: "'Barlow', sans-serif"}}
+                            onChange={e => setResultInputs(prev => ({ ...prev, [s.id]: { ...prev[s.id], games: parseInt(e.target.value) } }))}
+                          >
+                            <option value="">Gms</option>
+                            {[4,5,6,7].map(g => <option key={g}>{g}</option>)}
+                          </select>
+                          <button
+                            onClick={() => { const r = resultInputs[s.id]; if (r?.winner && r?.games) enterResult(s.id, r.winner, r.games) }}
+                            style={{padding: '5px 12px', borderRadius: 6, background: 'rgba(110,232,122,0.15)', border: '1px solid rgba(110,232,122,0.3)', color: '#6ee87a', fontSize: 12, cursor: 'pointer', fontFamily: "'Barlow', sans-serif"}}
+                          >Save</button>
+                        </div>
+                      )}
+                      {s.result_winner && (
+                        <div style={{fontSize: 11, color: '#6ee87a', marginTop: 4}}>✓ {s.result_winner} in {s.result_games}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="admin-card">
+            <h3>Pool Stats</h3>
+            <div className="stat-row"><span>Total Participants</span><span className="stat-val">{participants.length}</span></div>
+            <div className="stat-row"><span>Series Locked</span><span className="stat-val">{allSeries.filter(s => s.locked).length} / {allSeries.length}</span></div>
+            <div className="stat-row"><span>Series Completed</span><span className="stat-val">{allSeries.filter(s => s.result_winner).length} / {allSeries.length}</span></div>
           </div>
         </div>
-        <div className="admin-card">
-          <h3>Pool Stats</h3>
-          <div className="stat-row"><span>Total Participants</span><span className="stat-val">{participants.length}</span></div>
-          <div className="stat-row"><span>Series Locked</span><span className="stat-val">{allSeries.filter(s => s.locked).length} / {allSeries.length}</span></div>
-          <div className="stat-row"><span>Series Completed</span><span className="stat-val">{allSeries.filter(s => s.result_winner).length} / {allSeries.length}</span></div>
+      )}
+
+      {adminTab === 'picks' && (
+        <div>
+          {leagues.map(lg => (
+            <div key={lg} style={{marginBottom: 32}}>
+              {allRounds.map(r => {
+                const roundSeries = (series[lg] || []).filter(s => s.round === r)
+                if (roundSeries.length === 0) return null
+                return (
+                  <div key={r} style={{marginBottom: 24}}>
+                    <div className="section-label" style={{marginBottom: 12}}>
+                      {lg === 'NHL' ? '🏒' : '🏀'} {lg} · Round {r}
+                    </div>
+                    <div style={{background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden'}}>
+                      <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                        <thead>
+                          <tr>
+                            <th style={{textAlign:'left', padding:'10px 16px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.25)', borderBottom:'1px solid rgba(255,255,255,0.06)', fontFamily:"'Barlow Condensed', sans-serif"}}>Participant</th>
+                            {roundSeries.map(s => (
+                              <th key={s.id} style={{textAlign:'center', padding:'10px 8px', fontSize:11, fontWeight:700, letterSpacing:0.5, textTransform:'uppercase', color:'rgba(255,255,255,0.25)', borderBottom:'1px solid rgba(255,255,255,0.06)', fontFamily:"'Barlow Condensed', sans-serif"}}>
+                                {s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}
+                              </th>
+                            ))}
+                            <th style={{textAlign:'right', padding:'10px 16px', fontSize:11, fontWeight:700, letterSpacing:1, textTransform:'uppercase', color:'rgba(255,255,255,0.25)', borderBottom:'1px solid rgba(255,255,255,0.06)', fontFamily:"'Barlow Condensed', sans-serif"}}>Progress</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {participants.map(u => {
+                            const picked = roundSeries.filter(s => allPicks.find(p => p.user_id === u.id && p.series_id === s.id)).length
+                            const total = roundSeries.length
+                            const pct = total > 0 ? (picked / total) * 100 : 0
+                            return (
+                              <tr key={u.id} style={{borderBottom: '1px solid rgba(255,255,255,0.04)'}}>
+                                <td style={{padding: '11px 16px', fontSize: 13, fontWeight: 500}}>{u.full_name}</td>
+                                {roundSeries.map(s => {
+                                  const hasPick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id)
+                                  return (
+                                    <td key={s.id} style={{textAlign: 'center', padding: '11px 8px'}}>
+                                      <span style={{
+                                        display: 'inline-block', padding: '2px 8px', borderRadius: 4,
+                                        fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
+                                        background: hasPick ? 'rgba(110,232,122,0.12)' : 'rgba(248,113,113,0.1)',
+                                        color: hasPick ? '#6ee87a' : '#f87171',
+                                        fontFamily: "'Barlow Condensed', sans-serif",
+                                      }}>
+                                        {hasPick ? '✓' : '—'}
+                                      </span>
+                                    </td>
+                                  )
+                                })}
+                                <td style={{padding: '11px 16px'}}>
+                                  <div style={{display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end'}}>
+                                    <div style={{width: 56, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden'}}>
+                                      <div style={{
+                                        height: '100%', borderRadius: 3,
+                                        width: `${pct}%`,
+                                        background: pct === 100 ? '#6ee87a' : pct > 0 ? '#c9952a' : '#f87171',
+                                        transition: 'width 0.3s ease'
+                                      }} />
+                                    </div>
+                                    <span style={{
+                                      fontSize: 12, fontWeight: 700, minWidth: 28, textAlign: 'right',
+                                      color: pct === 100 ? '#6ee87a' : pct > 0 ? '#c9952a' : '#f87171',
+                                      fontFamily: "'Barlow Condensed', sans-serif",
+                                    }}>{picked}/{total}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+
+          <div className="admin-card">
+            <h3>Missing Picks Summary</h3>
+            <div style={{fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 16, lineHeight: 1.6}}>
+              Generate a summary of all missing picks across all rounds and leagues. Copy and paste into your group chat.
+            </div>
+            <button className="blast-btn" onClick={copyMissingSummary}>
+              📋 Copy Missing Picks Summary
+            </button>
+          </div>
         </div>
-        <div className="admin-card">
-          <h3>Text Notifications</h3>
-          <div style={{fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 16, lineHeight: 1.6}}>SMS blasts via Twilio — coming in a future update.</div>
-          <button className="blast-btn" onClick={() => showToast('📱 Coming soon!')}>📱 Send Picks Reminder</button>
-          <button className="blast-btn" style={{marginTop: 8}} onClick={() => showToast('🏆 Coming soon!')}>🏆 Send Standings Update</button>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
 
 const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500;600&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'DM Sans', sans-serif; }
-  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap');
-  .app { min-height: 100vh; background: #0a0e1a; color: #e8eaf0; }
-  .app::before { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at 20% 50%, rgba(0,80,160,0.15) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(0,160,80,0.08) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+  body { font-family: 'Barlow', sans-serif; }
+  .app { min-height: 100vh; background: #12151f; color: #e8eaf0; }
+  .app::before { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at 20% 50%, rgba(201,149,42,0.04) 0%, transparent 60%); pointer-events: none; z-index: 0; }
   .content { position: relative; z-index: 1; }
-  .nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: rgba(10,14,26,0.9); border-bottom: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 100; }
-  .nav-logo { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; }
-  .nav-tabs { display: flex; gap: 4px; }
-  .nav-tab { padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; background: transparent; border: none; color: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.2s; }
-  .nav-tab:hover { color: #fff; background: rgba(255,255,255,0.06); }
-  .nav-tab.active { background: rgba(59,130,246,0.2); color: #60a5fa; }
-  .nav-user { font-size: 13px; color: rgba(255,255,255,0.5); display: flex; align-items: center; gap: 8px; }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: #0d1017; border-bottom: 1px solid rgba(255,255,255,0.07); position: sticky; top: 0; z-index: 100; }
+  .nav-logo { line-height: 1.1; }
+  .nav-year { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; color: #c9952a; letter-spacing: 2px; text-transform: uppercase; }
+  .nav-title { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 800; color: #fff; letter-spacing: 2px; text-transform: uppercase; }
+  .nav-tabs { display: flex; gap: 2px; }
+  .nav-tab { padding: 8px 16px; border-radius: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: transparent; border: none; color: rgba(255,255,255,0.35); cursor: pointer; transition: all 0.2s; }
+  .nav-tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
+  .nav-tab.active { color: #c9952a; background: rgba(201,149,42,0.1); }
+  .nav-user { font-size: 13px; color: rgba(255,255,255,0.5); display: flex; align-items: center; gap: 8px; font-family: 'Barlow', sans-serif; }
   .nav-user strong { color: #fff; }
-  .logout-btn { padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.5); font-size: 12px; cursor: pointer; transition: all 0.2s; }
+  .logout-btn { padding: 5px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.5); font-size: 12px; cursor: pointer; transition: all 0.2s; font-family: 'Barlow', sans-serif; }
   .logout-btn:hover { border-color: rgba(255,255,255,0.3); color: #fff; }
-  .mobile-menu { display: none; background: transparent; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 18px; padding: 4px 10px; cursor: pointer; }
-  .mobile-dropdown { display: none; position: absolute; top: 61px; left: 0; right: 0; background: rgba(10,14,26,0.98); border-bottom: 1px solid rgba(255,255,255,0.08); flex-direction: column; z-index: 99; padding: 8px 16px 16px; }
-  .mobile-dropdown button { padding: 12px 16px; background: transparent; border: none; color: rgba(255,255,255,0.6); font-size: 15px; font-weight: 500; cursor: pointer; text-align: left; border-radius: 8px; width: 100%; }
-  .mobile-dropdown button:hover { background: rgba(255,255,255,0.06); color: #fff; }
-  .mobile-dropdown button.active { color: #60a5fa; background: rgba(59,130,246,0.1); }
-  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0a0e1a; background-image: radial-gradient(ellipse at 30% 40%, rgba(0,80,160,0.2) 0%, transparent 60%), radial-gradient(ellipse at 70% 70%, rgba(0,120,60,0.1) 0%, transparent 50%); }
-  .login-card { width: 380px; padding: 48px 40px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; backdrop-filter: blur(20px); }
-  .login-title { font-family: 'Bebas Neue', sans-serif; font-size: 42px; letter-spacing: 3px; text-align: center; margin-bottom: 4px; }
-  .login-sub { text-align: center; color: rgba(255,255,255,0.4); font-size: 13px; margin-bottom: 36px; }
-  .field-label { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,0.4); text-transform: uppercase; margin-bottom: 6px; }
-  .field-input { width: 100%; padding: 12px 16px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
-  .field-input:focus { border-color: rgba(59,130,246,0.5); }
+  .mobile-menu { display: none; background: transparent; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; font-size: 18px; padding: 4px 10px; cursor: pointer; }
+  .mobile-dropdown { display: none; position: absolute; top: 61px; left: 0; right: 0; background: rgba(13,16,23,0.98); border-bottom: 1px solid rgba(255,255,255,0.07); flex-direction: column; z-index: 99; padding: 8px 16px 16px; }
+  .mobile-dropdown button { padding: 12px 16px; background: transparent; border: none; color: rgba(255,255,255,0.6); font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; text-align: left; border-radius: 6px; width: 100%; }
+  .mobile-dropdown button:hover { background: rgba(255,255,255,0.05); color: #fff; }
+  .mobile-dropdown button.active { color: #c9952a; background: rgba(201,149,42,0.1); }
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #12151f; background-image: radial-gradient(ellipse at 30% 40%, rgba(201,149,42,0.08) 0%, transparent 60%); }
+  .login-card { width: 380px; padding: 48px 40px; background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; }
+  .login-logo { margin-bottom: 4px; }
+  .login-year { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: #c9952a; letter-spacing: 2px; text-transform: uppercase; }
+  .login-title { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 36px; font-weight: 800; color: #fff; letter-spacing: 2px; text-transform: uppercase; }
+  .login-sub { color: rgba(255,255,255,0.35); font-size: 13px; margin-bottom: 32px; font-family: 'Barlow', sans-serif; }
+  .field-label { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255,255,255,0.4); text-transform: uppercase; margin-bottom: 6px; }
+  .field-input { width: 100%; padding: 11px 14px; border-radius: 7px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-family: 'Barlow', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
+  .field-input:focus { border-color: rgba(201,149,42,0.5); }
   .pin-row { display: flex; gap: 10px; margin-bottom: 16px; }
-  .pin-input { width: 52px; height: 52px; text-align: center; font-size: 20px; font-weight: 600; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; }
-  .pin-input:focus { border-color: rgba(59,130,246,0.5); }
-  .btn-primary { width: 100%; padding: 14px; border-radius: 10px; background: #3b82f6; border: none; color: #fff; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
-  .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
-  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-  .register-link { text-align: center; margin-top: 20px; font-size: 13px; color: rgba(255,255,255,0.4); }
-  .register-link button { background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 13px; }
-  .error-msg { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+  .pin-input { width: 52px; height: 52px; text-align: center; font-size: 20px; font-weight: 600; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; font-family: 'Barlow', sans-serif; }
+  .pin-input:focus { border-color: rgba(201,149,42,0.5); }
+  .btn-primary { width: 100%; padding: 13px; border-radius: 8px; background: #c9952a; border: none; color: #000; font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
+  .btn-primary:hover { background: #e8b84b; }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .register-link { text-align: center; margin-top: 20px; font-size: 13px; color: rgba(255,255,255,0.4); font-family: 'Barlow', sans-serif; }
+  .register-link button { background: none; border: none; color: #c9952a; cursor: pointer; font-size: 13px; font-family: 'Barlow', sans-serif; }
+  .error-msg { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: #f87171; border-radius: 7px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; font-family: 'Barlow', sans-serif; }
   .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
-  .page-title { font-family: 'Bebas Neue', sans-serif; font-size: 36px; letter-spacing: 2px; margin-bottom: 8px; }
-  .page-sub { color: rgba(255,255,255,0.4); font-size: 14px; margin-bottom: 32px; }
-  .league-tabs { display: flex; gap: 8px; margin-bottom: 28px; }
-  .league-tab { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
-  .league-tab.active-nhl { background: rgba(0,100,200,0.2); border-color: rgba(0,100,200,0.4); color: #60a5fa; }
-  .league-tab.active-nba { background: rgba(200,50,0,0.2); border-color: rgba(200,50,0,0.4); color: #f87171; }
-  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-  .series-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; transition: border-color 0.2s; position: relative; overflow: hidden; }
-  .series-card:hover { border-color: rgba(255,255,255,0.15); }
+  .page-title { font-family: 'Barlow Condensed', sans-serif; font-size: 38px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  .page-sub { color: rgba(255,255,255,0.4); font-size: 14px; margin-bottom: 28px; font-family: 'Barlow', sans-serif; }
+  .section-label { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.3); margin-bottom: 16px; }
+  .league-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+  .league-tab { padding: 9px 22px; border-radius: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
+  .league-tab.active-nhl { background: rgba(201,149,42,0.12); border-color: rgba(201,149,42,0.4); color: #c9952a; }
+  .league-tab.active-nba { background: rgba(201,149,42,0.12); border-color: rgba(201,149,42,0.4); color: #c9952a; }
+  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .series-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 18px; transition: border-color 0.2s; position: relative; overflow: hidden; }
+  .series-card:hover { border-color: rgba(255,255,255,0.14); }
   .series-card.locked { opacity: 0.75; }
-  .series-card.locked::after { content: '🔒 LOCKED'; position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 700; letter-spacing: 1px; background: rgba(239,68,68,0.2); color: #fca5a5; padding: 3px 8px; border-radius: 4px; }
-  .series-card.submitted::after { content: '✓ SUBMITTED'; position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 700; letter-spacing: 1px; background: rgba(34,197,94,0.2); color: #86efac; padding: 3px 8px; border-radius: 4px; }
-  .matchup { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-  .team-opt { flex: 1; padding: 10px 12px; border-radius: 10px; border: 2px solid rgba(255,255,255,0.1); background: transparent; color: #fff; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; text-align: center; line-height: 1.3; }
-  .team-opt:hover:not(:disabled) { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
-  .team-opt.selected { border-color: #3b82f6; background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .series-card.locked::after { content: 'LOCKED'; position: absolute; top: 12px; right: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; background: rgba(248,113,113,0.15); color: #f87171; padding: 3px 7px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; }
+  .series-card.submitted::after { content: '✓ SUBMITTED'; position: absolute; top: 12px; right: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; background: rgba(201,149,42,0.15); color: #c9952a; padding: 3px 7px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; }
+  .matchup { display: flex; gap: 10px; margin-bottom: 14px; }
+  .team-opt { flex: 1; padding: 12px 10px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; transition: all 0.2s; font-family: 'Barlow', sans-serif; font-size: 13px; font-weight: 500; text-align: center; line-height: 1.3; }
+  .team-opt:hover:not(:disabled) { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.04); }
   .team-opt:disabled { cursor: default; }
   .games-row { margin-top: 12px; }
-  .games-label { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,0.35); text-transform: uppercase; margin-bottom: 8px; }
+  .games-label { font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255,255,255,0.25); text-transform: uppercase; margin-bottom: 8px; }
   .games-opts { display: flex; gap: 6px; }
-  .game-num { flex: 1; padding: 7px 4px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; text-align: center; }
-  .game-num:hover:not(:disabled) { border-color: rgba(255,255,255,0.3); color: #fff; }
-  .game-num.selected { border-color: #3b82f6; background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .game-num { flex: 1; padding: 7px 4px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; transition: all 0.2s; text-align: center; }
+  .game-num:hover:not(:disabled) { border-color: rgba(201,149,42,0.4); color: #c9952a; }
+  .game-num.selected { border-color: #c9952a; background: rgba(201,149,42,0.15); color: #c9952a; }
   .game-num:disabled { cursor: default; }
-  .submit-pick-btn { width: 100%; margin-top: 14px; padding: 10px; border-radius: 10px; background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.4); color: #93c5fd; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .submit-pick-btn:hover:not(:disabled) { background: rgba(59,130,246,0.35); }
+  .submit-pick-btn { width: 100%; margin-top: 12px; padding: 10px; border-radius: 7px; background: rgba(201,149,42,0.15); border: 1px solid rgba(201,149,42,0.4); color: #c9952a; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
+  .submit-pick-btn:hover:not(:disabled) { background: rgba(201,149,42,0.25); }
   .submit-pick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .result-badge { margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: space-between; }
+  .result-badge { margin-top: 12px; padding: 8px 12px; border-radius: 7px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); font-size: 12px; color: rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: space-between; font-family: 'Barlow', sans-serif; }
   .result-badge strong { color: #fff; }
-  .pts-badge { font-weight: 700; font-size: 14px; }
-  .pts-pos { color: #86efac; }
-  .pts-neg { color: #fca5a5; }
-  .standings-tabs { display: flex; gap: 8px; margin-bottom: 28px; }
-  .std-tab { padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
-  .std-tab.active { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); color: #fff; }
+  .pts-badge { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 0.5px; }
+  .pts-pos { color: #6ee87a; }
+  .pts-neg { color: #f87171; }
+  .standings-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+  .std-tab { padding: 9px 20px; border-radius: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
+  .std-tab.active { background: rgba(201,149,42,0.12); border-color: rgba(201,149,42,0.4); color: #c9952a; }
   .standings-table { width: 100%; border-collapse: collapse; }
-  .standings-table th { text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.3); border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .standings-table td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 14px; }
+  .standings-table th { text-align: left; padding: 10px 16px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(255,255,255,0.25); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .standings-table td { padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 14px; font-family: 'Barlow', sans-serif; }
+  .standings-table tr:last-child td { border-bottom: none; }
   .standings-table tr:hover td { background: rgba(255,255,255,0.02); }
-  .rank-num { font-family: 'Bebas Neue', sans-serif; font-size: 22px; color: rgba(255,255,255,0.2); }
-  .rank-1 { color: #fbbf24; } .rank-2 { color: #94a3b8; } .rank-3 { color: #b87333; }
-  .payout-row td { background: rgba(255,255,255,0.02); }
-  .payout-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin-left: 8px; }
-  .payout-gold { background: rgba(251,191,36,0.2); color: #fbbf24; }
+  .rank-num { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; color: rgba(255,255,255,0.2); }
+  .rank-1 { color: #c9952a; } .rank-2 { color: #94a3b8; } .rank-3 { color: #b87333; }
+  .payout-row td { background: rgba(201,149,42,0.04); }
+  .payout-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; margin-left: 8px; }
+  .payout-gold   { background: rgba(201,149,42,0.2);  color: #c9952a; }
   .payout-silver { background: rgba(148,163,184,0.2); color: #94a3b8; }
-  .payout-bronze { background: rgba(184,115,51,0.2); color: #b87333; }
-  .score-val { font-weight: 700; font-size: 16px; }
-  .score-pos { color: #86efac; }
-  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .admin-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
-  .admin-card h3 { font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 1px; margin-bottom: 16px; color: rgba(255,255,255,0.7); }
-  .lock-toggle { padding: 5px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: none; cursor: pointer; transition: all 0.2s; }
-  .lock-toggle.unlocked { background: rgba(239,68,68,0.2); color: #fca5a5; }
-  .lock-toggle.unlocked:hover { background: rgba(239,68,68,0.35); }
-  .lock-toggle.locked-btn { background: rgba(34,197,94,0.2); color: #86efac; }
-  .lock-toggle.locked-btn:hover { background: rgba(34,197,94,0.35); }
-  .stat-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .payout-bronze { background: rgba(184,115,51,0.2);  color: #b87333; }
+  .score-val { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 17px; }
+  .score-pos { color: #6ee87a; }
+  .score-neg { color: #f87171; }
+  .scoring-intro-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 24px; margin-bottom: 28px; }
+  .scoring-intro-title { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #c9952a; margin-bottom: 10px; }
+  .round-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+  .round-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 20px; }
+  .round-code { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 800; color: #c9952a; letter-spacing: 1px; margin-bottom: 2px; }
+  .round-name-label { font-size: 12px; color: rgba(255,255,255,0.3); margin-bottom: 12px; font-family: 'Barlow', sans-serif; }
+  .round-pts { font-family: 'Barlow Condensed', sans-serif; font-size: 40px; font-weight: 800; color: #fff; line-height: 1; }
+  .round-pts span { font-size: 16px; font-weight: 400; color: rgba(255,255,255,0.3); }
+  .round-bonus { font-family: 'Barlow', sans-serif; font-size: 12px; color: #c9952a; margin-top: 6px; font-weight: 600; }
+  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .admin-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 24px; }
+  .admin-card h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; color: rgba(255,255,255,0.7); }
+  .lock-toggle { padding: 5px 12px; border-radius: 5px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; border: none; cursor: pointer; transition: all 0.2s; }
+  .lock-toggle.unlocked { background: rgba(248,113,113,0.15); color: #f87171; }
+  .lock-toggle.unlocked:hover { background: rgba(248,113,113,0.25); }
+  .lock-toggle.locked-btn { background: rgba(110,232,122,0.15); color: #6ee87a; }
+  .lock-toggle.locked-btn:hover { background: rgba(110,232,122,0.25); }
+  .stat-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: 'Barlow', sans-serif; color: rgba(255,255,255,0.5); }
   .stat-row:last-child { border-bottom: none; }
   .stat-val { font-weight: 700; color: #fff; }
-  .blast-btn { width: 100%; margin-top: 8px; padding: 12px; border-radius: 10px; background: rgba(139,92,246,0.2); border: 1px solid rgba(139,92,246,0.4); color: #c4b5fd; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .blast-btn:hover { background: rgba(139,92,246,0.35); }
-  .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; background: rgba(34,197,94,0.9); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; }
+  .blast-btn { width: 100%; padding: 12px; border-radius: 8px; background: rgba(201,149,42,0.15); border: 1px solid rgba(201,149,42,0.4); color: #c9952a; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
+  .blast-btn:hover { background: rgba(201,149,42,0.25); }
+  .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; background: rgba(110,232,122,0.9); color: #000; padding: 12px 20px; border-radius: 8px; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
+  .toast-error { background: rgba(248,113,113,0.9); color: #fff; }
   @media (max-width: 600px) {
     .admin-grid { grid-template-columns: 1fr; }
+    .round-grid { grid-template-columns: 1fr 1fr; }
     .nav-tabs { display: none; }
     .mobile-menu { display: block !important; }
     .mobile-dropdown { display: flex; }
