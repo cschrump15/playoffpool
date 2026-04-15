@@ -52,12 +52,21 @@ const TEAM_COLORS = {
   "St. Louis Blues":         { bg: "#002F87", text: "#ffffff" },
   "Minnesota Wild":          { bg: "#154734", text: "#ffffff" },
   "Seattle Kraken":          { bg: "#001628", text: "#99D9D9" },
+  "Buffalo Sabres":          { bg: "#003087", text: "#ffffff" },
+  "Montreal Canadiens":      { bg: "#AF1E2D", text: "#ffffff" },
+  "Ottawa Senators":         { bg: "#C52032", text: "#ffffff" },
+  "Philadelphia Flyers":     { bg: "#F74902", text: "#ffffff" },
+  "Pittsburgh Penguins":     { bg: "#FCB514", text: "#000000" },
+  "Los Angeles Kings":       { bg: "#A2AAAD", text: "#000000" },
+  "Utah Mammoth":            { bg: "#6CACE4", text: "#000000" },
+  "Anaheim Ducks":           { bg: "#F47A38", text: "#000000" },
   "Boston Celtics":          { bg: "#007A33", text: "#ffffff" },
   "Miami Heat":              { bg: "#98002E", text: "#ffffff" },
   "Milwaukee Bucks":         { bg: "#00471B", text: "#ffffff" },
   "Indiana Pacers":          { bg: "#002D62", text: "#ffffff" },
   "Denver Nuggets":          { bg: "#0E2240", text: "#FEC524" },
   "LA Lakers":               { bg: "#552583", text: "#FDB927" },
+  "Los Angeles Lakers":      { bg: "#552583", text: "#FDB927" },
   "Oklahoma City Thunder":   { bg: "#007AC1", text: "#ffffff" },
   "New Orleans Pelicans":    { bg: "#0C2340", text: "#C8102E" },
   "Cleveland Cavaliers":     { bg: "#860038", text: "#ffffff" },
@@ -68,6 +77,11 @@ const TEAM_COLORS = {
   "Golden State Warriors":   { bg: "#1D428A", text: "#FFC72C" },
   "Houston Rockets":         { bg: "#CE1141", text: "#ffffff" },
   "Memphis Grizzlies":       { bg: "#5D76A9", text: "#12173F" },
+  "Detroit Pistons":         { bg: "#C8102E", text: "#ffffff" },
+  "Toronto Raptors":         { bg: "#CE1141", text: "#ffffff" },
+  "Atlanta Hawks":           { bg: "#E03A3E", text: "#ffffff" },
+  "San Antonio Spurs":       { bg: "#C4CED4", text: "#000000" },
+  "TBD":                     { bg: "#2a2f3e", text: "#ffffff" },
 }
 
 function MobileNav({ page, setPage, isAdmin }) {
@@ -298,13 +312,17 @@ function LoginScreen({ onLogin, onRegister, loading }) {
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-logo">
-          <span className="login-year">2026</span>
-          <span className="login-title">Playoff Pool</span>
+          <div className="login-year-badge">2026</div>
+          <div className="login-title">Playoff Pool</div>
         </div>
         <div className="login-sub">NHL & NBA Playoffs</div>
+        <div className="login-toggle">
+          <button className={`toggle-btn ${!isRegister ? 'active' : ''}`} onClick={() => { setIsRegister(false); setError('') }}>Sign In</button>
+          <button className={`toggle-btn ${isRegister ? 'active' : ''}`} onClick={() => { setIsRegister(true); setError('') }}>Register</button>
+        </div>
         {error && <div className="error-msg">{error}</div>}
         <div className="field-label">Full Name</div>
-        <input className="field-input" placeholder="e.g. Alex Thompson" value={name} onChange={e => setName(e.target.value)} />
+        <input className="field-input" placeholder="e.g. Alex Thompson" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
         {isRegister && <>
           <div className="field-label">Phone Number</div>
           <input className="field-input" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} />
@@ -318,12 +336,6 @@ function LoginScreen({ onLogin, onRegister, loading }) {
         <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
           {loading ? 'Please wait...' : isRegister ? 'Create Account' : 'Sign In'}
         </button>
-        <div className="register-link">
-          {isRegister ? 'Already have an account? ' : 'New to the pool? '}
-          <button onClick={() => { setIsRegister(!isRegister); setError('') }}>
-            {isRegister ? 'Sign In' : 'Register'}
-          </button>
-        </div>
       </div>
     </div>
   )
@@ -380,17 +392,17 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '14px 20px', borderRadius: isCollapsed ? 8 : '8px 8px 0 0',
-                background: isCurrentRound ? 'rgba(201,149,42,0.08)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${isCurrentRound ? 'rgba(201,149,42,0.3)' : 'rgba(255,255,255,0.07)'}`,
+                background: isCurrentRound ? 'rgba(249,115,22,0.08)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${isCurrentRound ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.07)'}`,
                 borderBottom: !isCollapsed ? 'none' : undefined,
                 cursor: isCurrentRound ? 'default' : 'pointer',
               }}
             >
               <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-                <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 2, color: isCurrentRound ? '#c9952a' : 'rgba(255,255,255,0.4)', textTransform: 'uppercase'}}>
+                <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 2, color: isCurrentRound ? '#f97316' : 'rgba(255,255,255,0.4)', textTransform: 'uppercase'}}>
                   Round {r} <span style={{fontSize: 13, fontFamily: "'Barlow', sans-serif", fontWeight: 400, letterSpacing: 0, color: 'rgba(255,255,255,0.3)'}}> · {ROUND_NAMES[r]}</span>
                 </div>
-                {isCurrentRound && <span style={{fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: '3px 8px', borderRadius: 4, background: 'rgba(201,149,42,0.15)', color: '#c9952a', textTransform: 'uppercase'}}>Active</span>}
+                {isCurrentRound && <span style={{fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: '3px 8px', borderRadius: 4, background: 'rgba(249,115,22,0.15)', color: '#f97316', textTransform: 'uppercase'}}>Active</span>}
               </div>
               <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
                 {!isCurrentRound && (
@@ -402,7 +414,7 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
               </div>
             </div>
             {!isCollapsed && (
-              <div style={{border: `1px solid ${isCurrentRound ? 'rgba(201,149,42,0.3)' : 'rgba(255,255,255,0.07)'}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 16, background: 'rgba(255,255,255,0.01)'}}>
+              <div style={{border: `1px solid ${isCurrentRound ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.07)'}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 16, background: 'rgba(255,255,255,0.01)'}}>
                 <div className="series-grid">
                   {roundSeries.map(s => {
                     const submitted = userPicks[s.id]
@@ -496,7 +508,7 @@ function DistributionsPage({ series, allPicks, participants }) {
           const totalPicks = seriesPicks.length
           const homePct = totalPicks > 0 ? Math.round((homePicks / totalPicks) * 100) : 50
           const awayPct = totalPicks > 0 ? Math.round((awayPicks / totalPicks) * 100) : 50
-          const homeColor = TEAM_COLORS[s.home_team]?.bg || '#c9952a'
+          const homeColor = TEAM_COLORS[s.home_team]?.bg || '#f97316'
           const awayColor = TEAM_COLORS[s.away_team]?.bg || '#60a5fa'
           return (
             <div key={s.id} className="series-card">
@@ -550,6 +562,7 @@ function ScoringRulesPage() {
     { round: 3, name: 'Conference Finals',    winPts: 6, gameBonus: 2 },
     { round: 4, name: 'Stanley Cup / Finals', winPts: 8, gameBonus: 3 },
   ]
+  const maxScore = (4 + 1 + 5 + 1 + 6 + 2 + 8 + 3) * 8 * 2
   return (
     <div className="page">
       <div className="page-title">Scoring Rules</div>
@@ -557,6 +570,11 @@ function ScoringRulesPage() {
       <div className="scoring-intro-card">
         <div className="scoring-intro-title">How It Works</div>
         <p style={{fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7}}>Every series outcome sits on an 8-position scale from Winner in 4 to Loser in 4. Your points adjustment is based on how far your pick sits from the actual result — the further away, the worse the penalty.</p>
+      </div>
+      <div style={{background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: 10, padding: '20px 24px', marginBottom: 28, textAlign: 'center'}}>
+        <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 8}}>Maximum Possible Score</div>
+        <div style={{fontFamily: "'Barlow Condensed', sans-serif", fontSize: 52, fontWeight: 800, color: '#f97316', lineHeight: 1}}>{maxScore} <span style={{fontSize: 22, color: 'rgba(255,255,255,0.4)', fontWeight: 400}}>pts</span></div>
+        <div style={{fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 6}}>every pick correct with exact series length</div>
       </div>
       <div className="section-label">Points by Round</div>
       <div className="round-grid">
@@ -584,7 +602,7 @@ function ScoringRulesPage() {
           { label: 'Loser in 5',  pos: 7 }, { label: 'Loser in 4',  pos: 8 },
         ].map((item, i) => (
           <div key={i} style={{display: 'flex', alignItems: 'center', gap: 12}}>
-            <div style={{width: 24, height: 24, borderRadius: '50%', background: i < 4 ? 'rgba(201,149,42,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(201,149,42,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i < 4 ? '#c9952a' : '#f87171', flexShrink: 0}}>{item.pos}</div>
+            <div style={{width: 24, height: 24, borderRadius: '50%', background: i < 4 ? 'rgba(249,115,22,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(249,115,22,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i < 4 ? '#f97316' : '#f87171', flexShrink: 0}}>{item.pos}</div>
             <div style={{fontSize: 14, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)'}}>{item.label}</div>
           </div>
         ))}
@@ -686,8 +704,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
   const allSeries = [...series.NHL, ...series.NBA]
   const [resultInputs, setResultInputs] = useState({})
   const [adminTab, setAdminTab] = useState('series')
-
-  // Build pick status data
   const allRounds = [...new Set(allSeries.map(s => s.round))].sort()
   const leagues = ['NHL', 'NBA']
 
@@ -707,9 +723,7 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
         const missingByPerson = {}
         participants.forEach(u => {
           const missing = roundSeries.filter(s => !allPicks.find(p => p.user_id === u.id && p.series_id === s.id))
-          if (missing.length > 0) {
-            missingByPerson[u.full_name] = missing.map(s => getSeriesShortName(s))
-          }
+          if (missing.length > 0) missingByPerson[u.full_name] = missing.map(s => getSeriesShortName(s))
         })
         if (Object.keys(missingByPerson).length > 0) {
           anyMissing = true
@@ -739,7 +753,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
     <div className="page">
       <div className="page-title">Commissioner</div>
       <div className="page-sub">Manage series, enter results, and track participant picks.</div>
-
       <div className="standings-tabs" style={{marginBottom: 24}}>
         <button className={`std-tab ${adminTab === 'series' ? 'active' : ''}`} onClick={() => setAdminTab('series')}>Series Management</button>
         <button className={`std-tab ${adminTab === 'picks' ? 'active' : ''}`} onClick={() => setAdminTab('picks')}>Pick Status</button>
@@ -857,13 +870,13 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                                       <div style={{
                                         height: '100%', borderRadius: 3,
                                         width: `${pct}%`,
-                                        background: pct === 100 ? '#6ee87a' : pct > 0 ? '#c9952a' : '#f87171',
+                                        background: pct === 100 ? '#6ee87a' : pct > 0 ? '#f97316' : '#f87171',
                                         transition: 'width 0.3s ease'
                                       }} />
                                     </div>
                                     <span style={{
                                       fontSize: 12, fontWeight: 700, minWidth: 28, textAlign: 'right',
-                                      color: pct === 100 ? '#6ee87a' : pct > 0 ? '#c9952a' : '#f87171',
+                                      color: pct === 100 ? '#6ee87a' : pct > 0 ? '#f97316' : '#f87171',
                                       fontFamily: "'Barlow Condensed', sans-serif",
                                     }}>{picked}/{total}</span>
                                   </div>
@@ -879,7 +892,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
               })}
             </div>
           ))}
-
           <div className="admin-card">
             <h3>Missing Picks Summary</h3>
             <div style={{fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 16, lineHeight: 1.6}}>
@@ -899,58 +911,59 @@ const css = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500;600&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Barlow', sans-serif; }
-  .app { min-height: 100vh; background: #12151f; color: #e8eaf0; }
-  .app::before { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at 20% 50%, rgba(201,149,42,0.04) 0%, transparent 60%); pointer-events: none; z-index: 0; }
+  .app { min-height: 100vh; background: #0f1219; color: #e8eaf0; }
+  .app::before { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at 20% 50%, rgba(249,115,22,0.04) 0%, transparent 60%); pointer-events: none; z-index: 0; }
   .content { position: relative; z-index: 1; }
-  .nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: #0d1017; border-bottom: 1px solid rgba(255,255,255,0.07); position: sticky; top: 0; z-index: 100; }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: #0a0d14; border-bottom: 1px solid rgba(255,255,255,0.07); position: sticky; top: 0; z-index: 100; }
   .nav-logo { line-height: 1.1; }
-  .nav-year { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; color: #c9952a; letter-spacing: 2px; text-transform: uppercase; }
+  .nav-year { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; color: #f97316; letter-spacing: 2px; text-transform: uppercase; }
   .nav-title { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 800; color: #fff; letter-spacing: 2px; text-transform: uppercase; }
   .nav-tabs { display: flex; gap: 2px; }
   .nav-tab { padding: 8px 16px; border-radius: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: transparent; border: none; color: rgba(255,255,255,0.35); cursor: pointer; transition: all 0.2s; }
   .nav-tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
-  .nav-tab.active { color: #c9952a; background: rgba(201,149,42,0.1); }
+  .nav-tab.active { color: #f97316; background: rgba(249,115,22,0.1); }
   .nav-user { font-size: 13px; color: rgba(255,255,255,0.5); display: flex; align-items: center; gap: 8px; font-family: 'Barlow', sans-serif; }
   .nav-user strong { color: #fff; }
   .logout-btn { padding: 5px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.5); font-size: 12px; cursor: pointer; transition: all 0.2s; font-family: 'Barlow', sans-serif; }
   .logout-btn:hover { border-color: rgba(255,255,255,0.3); color: #fff; }
   .mobile-menu { display: none; background: transparent; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; font-size: 18px; padding: 4px 10px; cursor: pointer; }
-  .mobile-dropdown { display: none; position: absolute; top: 61px; left: 0; right: 0; background: rgba(13,16,23,0.98); border-bottom: 1px solid rgba(255,255,255,0.07); flex-direction: column; z-index: 99; padding: 8px 16px 16px; }
+  .mobile-dropdown { display: none; position: absolute; top: 61px; left: 0; right: 0; background: rgba(10,13,20,0.98); border-bottom: 1px solid rgba(255,255,255,0.07); flex-direction: column; z-index: 99; padding: 8px 16px 16px; }
   .mobile-dropdown button { padding: 12px 16px; background: transparent; border: none; color: rgba(255,255,255,0.6); font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; text-align: left; border-radius: 6px; width: 100%; }
   .mobile-dropdown button:hover { background: rgba(255,255,255,0.05); color: #fff; }
-  .mobile-dropdown button.active { color: #c9952a; background: rgba(201,149,42,0.1); }
-  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #12151f; background-image: radial-gradient(ellipse at 30% 40%, rgba(201,149,42,0.08) 0%, transparent 60%); }
-  .login-card { width: 380px; padding: 48px 40px; background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; }
-  .login-logo { margin-bottom: 4px; }
-  .login-year { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: #c9952a; letter-spacing: 2px; text-transform: uppercase; }
-  .login-title { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 36px; font-weight: 800; color: #fff; letter-spacing: 2px; text-transform: uppercase; }
-  .login-sub { color: rgba(255,255,255,0.35); font-size: 13px; margin-bottom: 32px; font-family: 'Barlow', sans-serif; }
-  .field-label { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255,255,255,0.4); text-transform: uppercase; margin-bottom: 6px; }
+  .mobile-dropdown button.active { color: #f97316; background: rgba(249,115,22,0.1); }
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0f1219; background-image: radial-gradient(ellipse at 50% 40%, rgba(249,115,22,0.1) 0%, transparent 60%); }
+  .login-card { width: 380px; padding: 48px 40px; background: #1c2030; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; text-align: center; }
+  .login-logo { margin-bottom: 16px; }
+  .login-year-badge { display: inline-block; background: #f97316; color: #fff; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 2px; padding: 3px 12px; border-radius: 4px; margin-bottom: 10px; }
+  .login-title { font-family: 'Barlow Condensed', sans-serif; font-size: 36px; font-weight: 800; color: #fff; letter-spacing: 2px; text-transform: uppercase; line-height: 1; }
+  .login-sub { color: rgba(255,255,255,0.35); font-size: 13px; margin-bottom: 24px; font-family: 'Barlow', sans-serif; }
+  .login-toggle { display: flex; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 3px; margin-bottom: 24px; }
+  .toggle-btn { flex: 1; padding: 8px; border-radius: 6px; border: none; background: transparent; color: rgba(255,255,255,0.4); font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
+  .toggle-btn.active { background: #f97316; color: #fff; }
+  .field-label { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255,255,255,0.4); text-transform: uppercase; margin-bottom: 6px; text-align: left; }
   .field-input { width: 100%; padding: 11px 14px; border-radius: 7px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-family: 'Barlow', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
-  .field-input:focus { border-color: rgba(201,149,42,0.5); }
-  .pin-row { display: flex; gap: 10px; margin-bottom: 16px; }
+  .field-input:focus { border-color: rgba(249,115,22,0.5); }
+  .pin-row { display: flex; gap: 10px; margin-bottom: 16px; justify-content: center; }
   .pin-input { width: 52px; height: 52px; text-align: center; font-size: 20px; font-weight: 600; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; outline: none; transition: border-color 0.2s; font-family: 'Barlow', sans-serif; }
-  .pin-input:focus { border-color: rgba(201,149,42,0.5); }
-  .btn-primary { width: 100%; padding: 13px; border-radius: 8px; background: #c9952a; border: none; color: #000; font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
-  .btn-primary:hover { background: #e8b84b; }
+  .pin-input:focus { border-color: rgba(249,115,22,0.5); }
+  .btn-primary { width: 100%; padding: 13px; border-radius: 8px; background: #f97316; border: none; color: #fff; font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
+  .btn-primary:hover { background: #fb923c; }
   .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
-  .register-link { text-align: center; margin-top: 20px; font-size: 13px; color: rgba(255,255,255,0.4); font-family: 'Barlow', sans-serif; }
-  .register-link button { background: none; border: none; color: #c9952a; cursor: pointer; font-size: 13px; font-family: 'Barlow', sans-serif; }
-  .error-msg { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: #f87171; border-radius: 7px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; font-family: 'Barlow', sans-serif; }
+  .error-msg { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: #f87171; border-radius: 7px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; font-family: 'Barlow', sans-serif; text-align: left; }
   .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
   .page-title { font-family: 'Barlow Condensed', sans-serif; font-size: 38px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
   .page-sub { color: rgba(255,255,255,0.4); font-size: 14px; margin-bottom: 28px; font-family: 'Barlow', sans-serif; }
   .section-label { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.3); margin-bottom: 16px; }
   .league-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
   .league-tab { padding: 9px 22px; border-radius: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
-  .league-tab.active-nhl { background: rgba(201,149,42,0.12); border-color: rgba(201,149,42,0.4); color: #c9952a; }
-  .league-tab.active-nba { background: rgba(201,149,42,0.12); border-color: rgba(201,149,42,0.4); color: #c9952a; }
+  .league-tab.active-nhl { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.4); color: #f97316; }
+  .league-tab.active-nba { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.4); color: #f97316; }
   .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-  .series-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 18px; transition: border-color 0.2s; position: relative; overflow: hidden; }
+  .series-card { background: #1c2030; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 18px; transition: border-color 0.2s; position: relative; overflow: hidden; }
   .series-card:hover { border-color: rgba(255,255,255,0.14); }
   .series-card.locked { opacity: 0.75; }
   .series-card.locked::after { content: 'LOCKED'; position: absolute; top: 12px; right: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; background: rgba(248,113,113,0.15); color: #f87171; padding: 3px 7px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; }
-  .series-card.submitted::after { content: '✓ SUBMITTED'; position: absolute; top: 12px; right: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; background: rgba(201,149,42,0.15); color: #c9952a; padding: 3px 7px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; }
+  .series-card.submitted::after { content: '✓ SUBMITTED'; position: absolute; top: 12px; right: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; background: rgba(249,115,22,0.15); color: #f97316; padding: 3px 7px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; }
   .matchup { display: flex; gap: 10px; margin-bottom: 14px; }
   .team-opt { flex: 1; padding: 12px 10px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; transition: all 0.2s; font-family: 'Barlow', sans-serif; font-size: 13px; font-weight: 500; text-align: center; line-height: 1.3; }
   .team-opt:hover:not(:disabled) { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.04); }
@@ -959,11 +972,11 @@ const css = `
   .games-label { font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255,255,255,0.25); text-transform: uppercase; margin-bottom: 8px; }
   .games-opts { display: flex; gap: 6px; }
   .game-num { flex: 1; padding: 7px 4px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; transition: all 0.2s; text-align: center; }
-  .game-num:hover:not(:disabled) { border-color: rgba(201,149,42,0.4); color: #c9952a; }
-  .game-num.selected { border-color: #c9952a; background: rgba(201,149,42,0.15); color: #c9952a; }
+  .game-num:hover:not(:disabled) { border-color: rgba(249,115,22,0.4); color: #f97316; }
+  .game-num.selected { border-color: #f97316; background: rgba(249,115,22,0.15); color: #f97316; }
   .game-num:disabled { cursor: default; }
-  .submit-pick-btn { width: 100%; margin-top: 12px; padding: 10px; border-radius: 7px; background: rgba(201,149,42,0.15); border: 1px solid rgba(201,149,42,0.4); color: #c9952a; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
-  .submit-pick-btn:hover:not(:disabled) { background: rgba(201,149,42,0.25); }
+  .submit-pick-btn { width: 100%; margin-top: 12px; padding: 10px; border-radius: 7px; background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.4); color: #f97316; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
+  .submit-pick-btn:hover:not(:disabled) { background: rgba(249,115,22,0.25); }
   .submit-pick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .result-badge { margin-top: 12px; padding: 8px 12px; border-radius: 7px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); font-size: 12px; color: rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: space-between; font-family: 'Barlow', sans-serif; }
   .result-badge strong { color: #fff; }
@@ -972,33 +985,33 @@ const css = `
   .pts-neg { color: #f87171; }
   .standings-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
   .std-tab { padding: 9px 20px; border-radius: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s; }
-  .std-tab.active { background: rgba(201,149,42,0.12); border-color: rgba(201,149,42,0.4); color: #c9952a; }
+  .std-tab.active { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.4); color: #f97316; }
   .standings-table { width: 100%; border-collapse: collapse; }
   .standings-table th { text-align: left; padding: 10px 16px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(255,255,255,0.25); border-bottom: 1px solid rgba(255,255,255,0.06); }
   .standings-table td { padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 14px; font-family: 'Barlow', sans-serif; }
   .standings-table tr:last-child td { border-bottom: none; }
   .standings-table tr:hover td { background: rgba(255,255,255,0.02); }
   .rank-num { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; color: rgba(255,255,255,0.2); }
-  .rank-1 { color: #c9952a; } .rank-2 { color: #94a3b8; } .rank-3 { color: #b87333; }
-  .payout-row td { background: rgba(201,149,42,0.04); }
+  .rank-1 { color: #f97316; } .rank-2 { color: #94a3b8; } .rank-3 { color: #b87333; }
+  .payout-row td { background: rgba(249,115,22,0.04); }
   .payout-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; margin-left: 8px; }
-  .payout-gold   { background: rgba(201,149,42,0.2);  color: #c9952a; }
+  .payout-gold   { background: rgba(249,115,22,0.2);  color: #f97316; }
   .payout-silver { background: rgba(148,163,184,0.2); color: #94a3b8; }
   .payout-bronze { background: rgba(184,115,51,0.2);  color: #b87333; }
   .score-val { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 17px; }
   .score-pos { color: #6ee87a; }
   .score-neg { color: #f87171; }
-  .scoring-intro-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 24px; margin-bottom: 28px; }
-  .scoring-intro-title { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #c9952a; margin-bottom: 10px; }
+  .scoring-intro-card { background: #1c2030; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 24px; margin-bottom: 28px; }
+  .scoring-intro-title { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #f97316; margin-bottom: 10px; }
   .round-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
-  .round-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 20px; }
-  .round-code { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 800; color: #c9952a; letter-spacing: 1px; margin-bottom: 2px; }
+  .round-card { background: #1c2030; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 20px; }
+  .round-code { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 800; color: #f97316; letter-spacing: 1px; margin-bottom: 2px; }
   .round-name-label { font-size: 12px; color: rgba(255,255,255,0.3); margin-bottom: 12px; font-family: 'Barlow', sans-serif; }
   .round-pts { font-family: 'Barlow Condensed', sans-serif; font-size: 40px; font-weight: 800; color: #fff; line-height: 1; }
   .round-pts span { font-size: 16px; font-weight: 400; color: rgba(255,255,255,0.3); }
-  .round-bonus { font-family: 'Barlow', sans-serif; font-size: 12px; color: #c9952a; margin-top: 6px; font-weight: 600; }
+  .round-bonus { font-family: 'Barlow', sans-serif; font-size: 12px; color: #f97316; margin-top: 6px; font-weight: 600; }
   .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .admin-card { background: #1a1f2e; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 24px; }
+  .admin-card { background: #1c2030; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 24px; }
   .admin-card h3 { font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; color: rgba(255,255,255,0.7); }
   .lock-toggle { padding: 5px 12px; border-radius: 5px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; border: none; cursor: pointer; transition: all 0.2s; }
   .lock-toggle.unlocked { background: rgba(248,113,113,0.15); color: #f87171; }
@@ -1008,8 +1021,8 @@ const css = `
   .stat-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: 'Barlow', sans-serif; color: rgba(255,255,255,0.5); }
   .stat-row:last-child { border-bottom: none; }
   .stat-val { font-weight: 700; color: #fff; }
-  .blast-btn { width: 100%; padding: 12px; border-radius: 8px; background: rgba(201,149,42,0.15); border: 1px solid rgba(201,149,42,0.4); color: #c9952a; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
-  .blast-btn:hover { background: rgba(201,149,42,0.25); }
+  .blast-btn { width: 100%; padding: 12px; border-radius: 8px; background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.4); color: #f97316; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
+  .blast-btn:hover { background: rgba(249,115,22,0.25); }
   .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; background: rgba(110,232,122,0.9); color: #000; padding: 12px 20px; border-radius: 8px; font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
   .toast-error { background: rgba(248,113,113,0.9); color: #fff; }
   @media (max-width: 600px) {
