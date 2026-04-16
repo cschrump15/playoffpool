@@ -214,6 +214,7 @@ const TEAM_COLORS = {
   "Dallas Stars":            { bg: "#006847", text: "#ffffff", alt: "#8F8F8C" },
   "Vegas Golden Knights":    { bg: "#B4975A", text: "#000000", alt: "#333F42" },
   "LA Kings":                { bg: "#111111", text: "#ffffff", alt: "#A2AAAD" },
+  "Los Angeles Kings":       { bg: "#111111", text: "#ffffff", alt: "#A2AAAD" },
   "Edmonton Oilers":         { bg: "#FF4C00", text: "#ffffff", alt: "#041E42" },
   "Vancouver Canucks":       { bg: "#00843D", text: "#ffffff", alt: "#041E42" },
   "Carolina Hurricanes":     { bg: "#CC0000", text: "#ffffff", alt: "#000000" },
@@ -914,28 +915,41 @@ function ScoringRulesPage({ participants }) {
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>{participants.length} participants × ${BUY_IN}</div>
       </div>
 
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Payouts</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Payouts</div>
+      <div style={{ marginBottom: 16 }}>
         {PAYOUT_PCTS.map((p, i) => {
           const amount = Math.round((pot * p.pct) / 10) * 10
+          const isFirst = i === 0
           return (
-            <div key={i} style={{ background: '#1c2030', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: '12px' }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 4 }}>{p.label}</div>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 24, fontWeight: 800, color: '#6ee87a', lineHeight: 1 }}>${amount.toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{Math.round(p.pct * 100)}% of pot</div>
+            <div key={i} style={{
+              display: isFirst ? 'block' : 'inline-block',
+              width: isFirst ? '100%' : 'calc(50% - 4px)',
+              marginRight: !isFirst && i % 2 === 1 ? '8px' : '0',
+              marginBottom: 8,
+              verticalAlign: 'top',
+            }}>
+              <div style={{ background: '#1c2030', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: '12px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 4 }}>{p.label}</div>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: isFirst ? 32 : 24, fontWeight: 800, color: '#6ee87a', lineHeight: 1 }}>${amount.toLocaleString()}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{Math.round(p.pct * 100)}% of pot</div>
+              </div>
             </div>
           )
         })}
       </div>
 
       <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>The 8-Position Scale</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
-        {['Winner in 4','Winner in 5','Winner in 6','Winner in 7','Loser in 7','Loser in 6','Loser in 5','Loser in 4'].map((label, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 22, height: 22, borderRadius: '50%', background: i < 4 ? 'rgba(249,115,22,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(249,115,22,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: i < 4 ? '#f97316' : '#f87171', flexShrink: 0 }}>{i+1}</div>
-            <div style={{ fontSize: 13, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)' }}>{label}</div>
-          </div>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 16px', marginBottom: 16 }}>
+        {['Winner in 4','Winner in 5','Winner in 6','Winner in 7','Loser in 7','Loser in 6','Loser in 5','Loser in 4'].map((label, i) => {
+          const col = i < 4 ? i : i - 4
+          const row = i < 4 ? 0 : 1
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, gridColumn: row + 1, gridRow: col + 1 }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: i < 4 ? 'rgba(249,115,22,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(249,115,22,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: i < 4 ? '#f97316' : '#f87171', flexShrink: 0 }}>{i+1}</div>
+              <div style={{ fontSize: 13, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)' }}>{label}</div>
+            </div>
+          )
+        })}
       </div>
 
       <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Examples — Round 1</div>
