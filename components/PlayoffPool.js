@@ -66,7 +66,6 @@ function calcSeriesEV(pick, series, oddsData) {
   const dist = GAME_LENGTH_DIST[league]
   const odds = oddsData[series.id]
   if (!odds) {
-    // No odds available — use 50/50
     let ev = 0
     ;[4,5,6,7].forEach(g => {
       ev += 0.5 * dist[g] * calcPoints(series.round, pick.picked_winner, series.home_team, g, pick.picked_games)
@@ -74,39 +73,27 @@ function calcSeriesEV(pick, series, oddsData) {
     })
     return ev
   }
-
   const { homeWinProb, seriesScore } = odds
   const awayWinProb = 1 - homeWinProb
   const homeWins = seriesScore?.homeWins || 0
   const awayWins = seriesScore?.awayWins || 0
-  const winsNeeded = 4
-
-  // Build possible remaining outcomes given current series score
   const outcomes = []
   ;[4,5,6,7].forEach(totalGames => {
-    const homeWinsNeeded = winsNeeded - homeWins
-    const awayWinsNeeded = winsNeeded - awayWins
+    const homeWinsNeeded = 4 - homeWins
+    const awayWinsNeeded = 4 - awayWins
     const totalGamesRemaining = totalGames - homeWins - awayWins
     if (totalGamesRemaining < Math.min(homeWinsNeeded, awayWinsNeeded)) return
     if (totalGamesRemaining > homeWinsNeeded + awayWinsNeeded - 1) return
-    // Home wins in totalGames
-    if (homeWinsNeeded > 0 && homeWinsNeeded <= totalGamesRemaining) {
+    if (homeWinsNeeded > 0 && homeWinsNeeded <= totalGamesRemaining)
       outcomes.push({ winner: series.home_team, games: totalGames, prob: homeWinProb * dist[totalGames] })
-    }
-    // Away wins in totalGames
-    if (awayWinsNeeded > 0 && awayWinsNeeded <= totalGamesRemaining) {
+    if (awayWinsNeeded > 0 && awayWinsNeeded <= totalGamesRemaining)
       outcomes.push({ winner: series.away_team, games: totalGames, prob: awayWinProb * dist[totalGames] })
-    }
   })
-
-  // Normalize probabilities
   const totalProb = outcomes.reduce((s, o) => s + o.prob, 0)
   if (totalProb === 0) return 0
-
   let ev = 0
   outcomes.forEach(o => {
-    const pts = calcPoints(series.round, pick.picked_winner, o.winner, o.games, pick.picked_games)
-    ev += (o.prob / totalProb) * pts
+    ev += (o.prob / totalProb) * calcPoints(series.round, pick.picked_winner, o.winner, o.games, pick.picked_games)
   })
   return ev
 }
@@ -118,8 +105,7 @@ function calcRemainingPts(allSeries) {
 }
 
 function softmaxChance(participants, key, remainingPts) {
-  const minTemp = 2
-  const maxTemp = 20
+  const minTemp = 2, maxTemp = 20
   const temp = minTemp + (maxTemp - minTemp) * (remainingPts / TOTAL_POSSIBLE_PTS)
   const vals = participants.map(p => (p[key] || 0) / temp)
   const maxV = Math.max(...vals)
@@ -133,7 +119,6 @@ function computeProjected(participants, allPicks, allSeriesFlat, oddsData) {
   const inProgressSeries = allSeriesFlat.filter(s => s.locked && !s.result_winner)
   const futureSeries = allSeriesFlat.filter(s => !s.locked)
 
-  // League average pts per pick from graded series only
   let totalLeaguePts = 0, totalLeaguePicks = 0
   gradedSeries.forEach(s => {
     allPicks.forEach(pk => {
@@ -148,14 +133,11 @@ function computeProjected(participants, allPicks, allSeriesFlat, oddsData) {
   })
   const leagueAvg = totalLeaguePicks > 0 ? totalLeaguePts / totalLeaguePicks : 0
 
-  // Mean EV per round for future series (50/50 baseline)
   const futureEVByRound = {}
   futureSeries.forEach(s => {
     const dist = GAME_LENGTH_DIST[s.league]
     let ev = 0
-    ;[4,5,6,7].forEach(g => {
-      ev += 0.5 * dist[g] * WINNER_PTS[s.round]
-    })
+    ;[4,5,6,7].forEach(g => { ev += 0.5 * dist[g] * WINNER_PTS[s.round] })
     if (!futureEVByRound[s.round]) futureEVByRound[s.round] = []
     futureEVByRound[s.round].push(ev)
   })
@@ -165,13 +147,10 @@ function computeProjected(participants, allPicks, allSeriesFlat, oddsData) {
   })
 
   return participants.map(u => {
-    // Personal skill from graded series only
     let personalPts = 0, personalPicks = 0
     gradedSeries.forEach(s => {
       const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id)
-      personalPts += pick
-        ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
-        : -4
+      personalPts += pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
       personalPicks++
     })
     const personalAvg = personalPicks > 0 ? personalPts / personalPicks : 0
@@ -180,7 +159,6 @@ function computeProjected(participants, allPicks, allSeriesFlat, oddsData) {
     let nhlProjected = u.nhlTotal || 0
     let nbaProjected = u.nbaTotal || 0
 
-    // In-progress EV
     inProgressSeries.forEach(s => {
       const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id) || null
       const ev = calcSeriesEV(pick, s, oddsData)
@@ -188,7 +166,6 @@ function computeProjected(participants, allPicks, allSeriesFlat, oddsData) {
       else nbaProjected += ev
     })
 
-    // Future series projected
     futureSeries.forEach(s => {
       const meanEV = meanFutureEV[s.round] || 0
       const proj = meanEV + skillFactor
@@ -252,6 +229,8 @@ const TEAM_COLORS = {
   "Toronto Raptors":         { bg: "#CE1141", text: "#ffffff", alt: "#000000" },
   "Atlanta Hawks":           { bg: "#E03A3E", text: "#ffffff", alt: "#C1D32F" },
   "San Antonio Spurs":       { bg: "#C4CED4", text: "#000000", alt: "#000000" },
+  "Phoenix Suns":            { bg: "#1D1160", text: "#ffffff", alt: "#E56020" },
+  "Portland Trail Blazers":  { bg: "#E03A3E", text: "#ffffff", alt: "#000000" },
   "TBD":                     { bg: "#2a2f3e", text: "#ffffff", alt: "#4a5568" },
 }
 
@@ -259,8 +238,7 @@ function DonutChart({ slices, size = 160 }) {
   const svgRef = useRef(null)
   const [tooltip, setTooltip] = useState(null)
   const r = size / 2 - 16
-  const cx = size / 2
-  const cy = size / 2
+  const cx = size / 2, cy = size / 2
   const circumference = 2 * Math.PI * r
   const total = slices.reduce((s, sl) => s + sl.count, 0)
   const GAP = 4
@@ -281,7 +259,7 @@ function DonutChart({ slices, size = 160 }) {
   }, [slices.map(s => s.count).join(',')])
 
   let offset = circumference * 0.25
-  const paths = slices.map((sl) => {
+  const paths = slices.map(sl => {
     const pct = sl.count / total
     const dashLen = Math.max(0, circumference * pct - GAP)
     const o = offset
@@ -302,22 +280,13 @@ function DonutChart({ slices, size = 160 }) {
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="20" />
         {paths.map((p, i) => (
           <g key={i}>
-            <circle
-              className="donut-slice"
-              cx={cx} cy={cy} r={r}
-              fill="none" stroke={p.bg} strokeWidth="20"
-              strokeDasharray={`${p.dashLen} ${circumference - p.dashLen}`}
-              strokeDashoffset={p.offset}
+            <circle className="donut-slice" cx={cx} cy={cy} r={r} fill="none" stroke={p.bg} strokeWidth="20"
+              strokeDasharray={`${p.dashLen} ${circumference - p.dashLen}`} strokeDashoffset={p.offset}
               style={{ cursor: 'pointer', transition: `stroke-dasharray 0.5s ease ${i * 0.1}s` }}
-              onClick={(e) => handleSliceClick(p, e)}
-            />
-            <circle
-              cx={cx} cy={cy} r={r}
-              fill="none" stroke={p.border} strokeWidth="2"
-              strokeDasharray={`${p.dashLen} ${circumference - p.dashLen}`}
-              strokeDashoffset={p.offset}
-              style={{ pointerEvents: 'none' }}
-            />
+              onClick={e => handleSliceClick(p, e)} />
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={p.border} strokeWidth="2"
+              strokeDasharray={`${p.dashLen} ${circumference - p.dashLen}`} strokeDashoffset={p.offset}
+              style={{ pointerEvents: 'none' }} />
           </g>
         ))}
         <text x={cx} y={cy - 5} textAnchor="middle" fontSize="20" fontWeight="800" fill="#fff" fontFamily="Barlow Condensed, sans-serif">{total}</text>
@@ -359,7 +328,7 @@ export default function PlayoffPool() {
       const now = new Date()
       const { data } = await supabase.from('series').select('*').eq('locked', false)
       if (data) {
-        data.forEach(async (s) => {
+        data.forEach(async s => {
           if (s.game1_time && new Date(s.game1_time) <= now)
             await supabase.from('series').update({ locked: true }).eq('id', s.id)
         })
@@ -383,10 +352,7 @@ export default function PlayoffPool() {
       const apiKey = process.env.NEXT_PUBLIC_ODDS_API_KEY
       if (!apiKey) return
       const newOdds = {}
-      const nhlSeries = activeSeries.filter(s => s.league === 'NHL')
-      const nbaSeries = activeSeries.filter(s => s.league === 'NBA')
-
-      for (const [sport, seriesList] of [['icehockey_nhl', nhlSeries], ['basketball_nba', nbaSeries]]) {
+      for (const [sport, seriesList] of [['icehockey_nhl', activeSeries.filter(s => s.league === 'NHL')], ['basketball_nba', activeSeries.filter(s => s.league === 'NBA')]]) {
         if (!seriesList.length) continue
         const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sport}/odds?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=american`)
         if (!res.ok) continue
@@ -412,16 +378,11 @@ export default function PlayoffPool() {
           const rawHome = americanToProb(homeOdds.price)
           const rawAway = americanToProb(awayOdds.price)
           const total = rawHome + rawAway
-          newOdds[s.id] = {
-            homeWinProb: rawHome / total,
-            seriesScore: s.series_score || { homeWins: 0, awayWins: 0 }
-          }
+          newOdds[s.id] = { homeWinProb: rawHome / total, seriesScore: s.series_score || { homeWins: 0, awayWins: 0 } }
         })
       }
       setOddsData(prev => ({ ...prev, ...newOdds }))
-    } catch (e) {
-      console.error('Odds fetch failed:', e)
-    }
+    } catch (e) { console.error('Odds fetch failed:', e) }
   }
 
   async function loadPicks() {
@@ -611,14 +572,9 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
   const maxRound = Math.max(...rounds, 1)
   const [openRounds, setOpenRounds] = useState({ [`${league}${maxRound}`]: true })
 
-  useEffect(() => {
-    setOpenRounds({ [`${league}${maxRound}`]: true })
-  }, [league])
+  useEffect(() => { setOpenRounds({ [`${league}${maxRound}`]: true }) }, [league])
 
-  function toggleRound(key) {
-    setOpenRounds(prev => ({ ...prev, [key]: !prev[key] }))
-  }
-
+  function toggleRound(key) { setOpenRounds(prev => ({ ...prev, [key]: !prev[key] })) }
   function setPick(seriesId, field, val) {
     setPendingPicks(prev => ({ ...prev, [seriesId]: { ...(prev[seriesId] || {}), [field]: val } }))
   }
@@ -673,9 +629,16 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
                   const isSubmitted = !!submitted && !pendingPicks[s.id]
                   let pts = null
                   if (submitted && s.result_winner) pts = calcPoints(s.round, submitted.winner, s.result_winner, s.result_games, submitted.games)
+                  const game1Display = s.game1_time
+                    ? new Date(s.game1_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })
+                    : 'TBD'
                   return (
                     <div key={s.id} className={`series-card ${s.locked ? 'sc-locked' : isSubmitted ? 'sc-submitted' : ''}`}>
-                      <div className="sc-date">Game 1 · {s.game1_time ? new Date(s.game1_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'TBD'}</div>
+                      <div className="sc-date">
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, color: '#f97316', letterSpacing: 1, textTransform: 'uppercase' }}>
+                          Game 1 · {game1Display}
+                        </span>
+                      </div>
                       <div className="matchup">
                         {[s.home_team, s.away_team].map(team => {
                           const isSelected = displayPick?.winner === team
@@ -731,18 +694,17 @@ function SeriesDistCard({ s, allPicks, participants }) {
     groups[key] = (groups[key] || 0) + 1
   })
 
-  const slices = []
-  const legend = []
+  const slices = [], legend = []
   ;[s.home_team, s.away_team].forEach(team => {
     const tc = TEAM_COLORS[team] || { bg: '#444', alt: '#888' }
-    const teamPicks = Object.entries(groups)
+    Object.entries(groups)
       .filter(([k]) => k.startsWith(team + '|'))
       .map(([k, cnt]) => ({ games: parseInt(k.split('|')[1]), cnt }))
       .sort((a, b) => a.games - b.games)
-    teamPicks.forEach(tp => {
-      slices.push({ label: `${team.split(' ').pop()} in ${tp.games}`, count: tp.cnt, bg: tc.bg, border: tc.alt })
-      legend.push({ label: `${team.split(' ').pop()} in ${tp.games}`, count: tp.cnt, bg: tc.bg, border: tc.alt })
-    })
+      .forEach(tp => {
+        slices.push({ label: `${team.split(' ').pop()} in ${tp.games}`, count: tp.cnt, bg: tc.bg, border: tc.alt })
+        legend.push({ label: `${team.split(' ').pop()} in ${tp.games}`, count: tp.cnt, bg: tc.bg, border: tc.alt })
+      })
   })
   if (noPicks > 0) {
     slices.push({ label: 'No Pick', count: noPicks, bg: '#374151', border: '#6b7280' })
@@ -826,9 +788,7 @@ function DistributionsPage({ series, allPicks, participants }) {
 
   useEffect(() => { setOpenRounds({ [`${league}1`]: true }) }, [league])
 
-  function toggleRound(key) {
-    setOpenRounds(prev => ({ ...prev, [key]: !prev[key] }))
-  }
+  function toggleRound(key) { setOpenRounds(prev => ({ ...prev, [key]: !prev[key] })) }
 
   return (
     <div className="page">
@@ -866,7 +826,7 @@ function DistributionsPage({ series, allPicks, participants }) {
 }
 
 function ScoringRulesPage({ participants }) {
-  const pot = participants.length * BUY_IN
+  const pot = (participants.length - 1) * BUY_IN
   const rounds = [
     { round: 1, name: 'First Round',  winPts: 4, gameBonus: 1 },
     { round: 2, name: 'Second Round', winPts: 5, gameBonus: 1 },
@@ -912,10 +872,10 @@ function ScoringRulesPage({ participants }) {
       <div style={{ background: 'rgba(110,232,122,0.08)', border: '1px solid rgba(110,232,122,0.2)', borderRadius: 10, padding: '16px', marginBottom: 12, textAlign: 'center' }}>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>Total Pot</div>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 48, fontWeight: 800, color: '#6ee87a', lineHeight: 1 }}>${pot.toLocaleString()}</div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>{participants.length} participants × ${BUY_IN}</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>${BUY_IN} per participant</div>
       </div>
 
-    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Payouts</div>
+      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Payouts</div>
       <div style={{ marginBottom: 16 }}>
         {PAYOUT_PCTS.map((p, i) => {
           const amount = Math.round((pot * p.pct) / 10) * 10
@@ -942,9 +902,8 @@ function ScoringRulesPage({ participants }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 16px', marginBottom: 16 }}>
         {['Winner in 4','Winner in 5','Winner in 6','Winner in 7','Loser in 7','Loser in 6','Loser in 5','Loser in 4'].map((label, i) => {
           const col = i < 4 ? i : i - 4
-          const row = i < 4 ? 0 : 1
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, gridColumn: row + 1, gridRow: col + 1 }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, gridColumn: (i < 4 ? 1 : 2), gridRow: col + 1 }}>
               <div style={{ width: 22, height: 22, borderRadius: '50%', background: i < 4 ? 'rgba(249,115,22,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(249,115,22,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: i < 4 ? '#f97316' : '#f87171', flexShrink: 0 }}>{i+1}</div>
               <div style={{ fontSize: 13, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)' }}>{label}</div>
             </div>
@@ -995,7 +954,6 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
     const H = 280
     canvas.width = W
     canvas.height = H
-
     const PAD = { top: 20, right: 20, bottom: 60, left: 44 }
     const chartW = W - PAD.left - PAD.right
     const chartH = H - PAD.top - PAD.bottom
@@ -1004,16 +962,10 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
       let cum = 0
       const points = leagueSeries.map(s => {
         const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
-        const pts = pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
-        cum += pts
+        cum += pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
         return cum
       })
-      return {
-        name: p.id === currentUserId ? 'You' : p.full_name,
-        points,
-        isMe: p.id === currentUserId,
-        color: p.id === currentUserId ? '#f97316' : COLORS[pi % COLORS.length]
-      }
+      return { name: p.id === currentUserId ? 'You' : p.full_name, points, isMe: p.id === currentUserId, color: p.id === currentUserId ? '#f97316' : COLORS[pi % COLORS.length] }
     })
 
     const allVals = allData.flatMap(d => d.points)
@@ -1026,7 +978,6 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
 
     ctx.clearRect(0, 0, W, H)
 
-    // Grid lines
     ctx.strokeStyle = 'rgba(255,255,255,0.06)'
     ctx.lineWidth = 1
     ;[0, 0.25, 0.5, 0.75, 1].forEach(t => {
@@ -1034,15 +985,13 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
       ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + chartW, y); ctx.stroke()
     })
 
-    // Zero line
     if (minV < 0) {
-      const y0 = toY(0)
       ctx.strokeStyle = 'rgba(255,255,255,0.15)'
       ctx.lineWidth = 1
+      const y0 = toY(0)
       ctx.beginPath(); ctx.moveTo(PAD.left, y0); ctx.lineTo(PAD.left + chartW, y0); ctx.stroke()
     }
 
-    // Y axis labels
     ctx.fillStyle = 'rgba(255,255,255,0.35)'
     ctx.font = '10px Barlow, sans-serif'
     ctx.textAlign = 'right'
@@ -1051,49 +1000,38 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
       ctx.fillText((v >= 0 ? '+' : '') + v, PAD.left - 6, PAD.top + t * chartH + 4)
     })
 
-    // X axis labels
     ctx.textAlign = 'center'
     ctx.fillStyle = 'rgba(255,255,255,0.3)'
     ctx.font = '9px Barlow, sans-serif'
     leagueSeries.forEach((s, i) => {
-      const x = toX(i)
-      const label = s.home_team.split(' ').pop().slice(0,3).toUpperCase()
       ctx.save()
-      ctx.translate(x, H - PAD.bottom + 14)
+      ctx.translate(toX(i), H - PAD.bottom + 14)
       ctx.rotate(-Math.PI / 4)
       ctx.textAlign = 'right'
-      ctx.fillText(label, 0, 0)
+      ctx.fillText(s.home_team.split(' ').pop().slice(0,3).toUpperCase(), 0, 0)
       ctx.restore()
     })
 
-    // Non-me lines first
     allData.filter(d => !d.isMe).forEach(d => {
       ctx.strokeStyle = d.color
       ctx.lineWidth = 1.5
       ctx.globalAlpha = 0.5
       ctx.beginPath()
-      d.points.forEach((v, i) => {
-        i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v))
-      })
+      d.points.forEach((v, i) => { i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)) })
       ctx.stroke()
     })
 
-    // My line on top
     const me = allData.find(d => d.isMe)
     if (me) {
       ctx.globalAlpha = 1
       ctx.strokeStyle = '#f97316'
       ctx.lineWidth = 3
       ctx.beginPath()
-      me.points.forEach((v, i) => {
-        i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v))
-      })
+      me.points.forEach((v, i) => { i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)) })
       ctx.stroke()
       me.points.forEach((v, i) => {
-        ctx.beginPath()
-        ctx.arc(toX(i), toY(v), 3, 0, Math.PI * 2)
-        ctx.fillStyle = '#f97316'
-        ctx.fill()
+        ctx.beginPath(); ctx.arc(toX(i), toY(v), 3, 0, Math.PI * 2)
+        ctx.fillStyle = '#f97316'; ctx.fill()
       })
     }
     ctx.globalAlpha = 1
@@ -1187,10 +1125,9 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
         {isChart ? 'Cumulative score after each graded series.' : isProj ? 'Projected final score + chance of winning.' : 'Click a name to expand their picks.'}
       </div>
 
-      {/* 3x3 tab grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginBottom: 16 }}>
-        {TABS.map((row, ri) =>
-          row.map((tab, ci) => (
+        {TABS.map((row) =>
+          row.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setView(tab.key)}
@@ -1217,7 +1154,6 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
         )}
       </div>
 
-      {/* Chart view */}
       {isChart && (
         <CumulativeChart
           participants={participants}
@@ -1228,7 +1164,6 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
         />
       )}
 
-      {/* Projected view */}
       {isProj && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1276,7 +1211,6 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
         </div>
       )}
 
-      {/* Live standings view */}
       {!isChart && !isProj && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1377,31 +1311,35 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
   const [adminTab, setAdminTab] = useState('series')
   const allRounds = [...new Set(allSeries.map(s => s.round))].sort()
   const leagues = ['NHL', 'NBA']
+  const paidCount = participants.filter(p => p.paid).length
 
   function getShortName(s) {
     return `${s.home_team.split(' ').pop()} vs ${s.away_team.split(' ').pop()}`
   }
 
   function generateMissingSummary() {
-    const lines = ['🏒🏀 2026 PLAYOFF POOL — MISSING PICKS\n']
+    const lines = ['🚨 League Alert - the following people are missing picks 🚨\n']
     let anyMissing = false
+
+    // Check all series that are currently OPEN (not locked) — picks can still be submitted
     leagues.forEach(lg => {
       allRounds.forEach(r => {
-        const roundSeries = (series[lg] || []).filter(s => s.round === r && s.locked)
-        if (!roundSeries.length) return
+        const openSeries = (series[lg] || []).filter(s => s.round === r && !s.locked)
+        if (!openSeries.length) return
         const missingByPerson = {}
         participants.forEach(u => {
-          const missing = roundSeries.filter(s => !allPicks.find(p => p.user_id === u.id && p.series_id === s.id))
+          const missing = openSeries.filter(s => !allPicks.find(p => p.user_id === u.id && p.series_id === s.id))
           if (missing.length) missingByPerson[u.full_name] = missing.map(s => getShortName(s))
         })
         if (Object.keys(missingByPerson).length) {
           anyMissing = true
           lines.push(`${lg} Round ${r}:`)
-          Object.entries(missingByPerson).forEach(([name, series]) => lines.push(`  ${name} — ${series.join(', ')}`))
+          Object.entries(missingByPerson).forEach(([name, seriesList]) => lines.push(`  ${name} — ${seriesList.join(', ')}`))
           lines.push('')
         }
       })
     })
+
     if (!anyMissing) lines.push('Everyone has submitted all their picks! 🎉\n')
     lines.push('Submit picks at: https://playoffpool.vercel.app/')
     return lines.join('\n')
@@ -1412,8 +1350,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
       .then(() => showToast('Summary copied! ✓'))
       .catch(() => showToast('Could not copy', 'error'))
   }
-
-  const paidCount = participants.filter(p => p.paid).length
 
   return (
     <div className="page">
@@ -1477,6 +1413,7 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
           </div>
           <div style={{ background: '#1c2030', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '14px' }}>
             <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>Missing Picks</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12, lineHeight: 1.5 }}>Flags picks missing for all currently open series. Copy and paste into your group chat.</div>
             <button className="blast-btn" onClick={copyMissingSummary}>📋 Copy Missing Picks Summary</button>
           </div>
         </>
@@ -1569,15 +1506,9 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                   <button
                     onClick={() => togglePayment(u.id, u.paid)}
                     style={{
-                      padding: '6px 16px',
-                      borderRadius: 6,
-                      fontFamily: "'Barlow Condensed', sans-serif",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      letterSpacing: 0.5,
-                      textTransform: 'uppercase',
-                      border: 'none',
-                      cursor: 'pointer',
+                      padding: '6px 16px', borderRadius: 6,
+                      fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700,
+                      letterSpacing: 0.5, textTransform: 'uppercase', border: 'none', cursor: 'pointer',
                       transition: 'all 0.2s',
                       background: u.paid ? 'rgba(110,232,122,0.15)' : 'rgba(248,113,113,0.15)',
                       color: u.paid ? '#6ee87a' : '#f87171',
@@ -1691,4 +1622,4 @@ const css = `
     .page-title { font-size: 34px; }
     .bottom-nav { max-width: 700px; left: 50%; transform: translateX(-50%); border-radius: 16px 16px 0 0; border-left: 1px solid rgba(255,255,255,0.08); border-right: 1px solid rgba(255,255,255,0.08); }
   }
-`  
+`
