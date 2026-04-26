@@ -988,6 +988,37 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
 const projDebug = computeProjected(participants, allPicks, allSeriesFlat)
 const meDebug = projDebug.find(p => p.id === currentUser?.id)
 console.log('My projected:', JSON.stringify(meDebug))
+
+// Per-series EV debug
+const myPicks = allPicks.filter(p => p.user_id === currentUser?.id)
+const inProgress = allSeriesFlat.filter(s => s.locked && !s.result_winner)
+inProgress.forEach(s => {
+  const pick = myPicks.find(p => p.series_id === s.id)
+  const ev = pick ? (() => {
+    const css = s.series_correct_score
+    if (!css) return 'NO_ODDS'
+    const outcomes = [
+      { key: 'home_4_0', winner: s.home_team, games: 4 },
+      { key: 'home_4_1', winner: s.home_team, games: 5 },
+      { key: 'home_4_2', winner: s.home_team, games: 6 },
+      { key: 'home_4_3', winner: s.home_team, games: 7 },
+      { key: 'away_4_0', winner: s.away_team, games: 4 },
+      { key: 'away_4_1', winner: s.away_team, games: 5 },
+      { key: 'away_4_2', winner: s.away_team, games: 6 },
+      { key: 'away_4_3', winner: s.away_team, games: 7 },
+    ]
+    const totalProb = outcomes.reduce((sum, o) => sum + (css[o.key] || 0), 0)
+    let ev = 0
+    outcomes.forEach(o => {
+      const prob = (css[o.key] || 0) / totalProb
+      if (prob === 0) return
+      const pts = calcPoints(s.round, pick.picked_winner, o.winner, o.games, pick.picked_games)
+      ev += prob * pts
+    })
+    return Math.round(ev * 100) / 100
+  })() : 'NO_PICK'
+  console.log(`${s.home_team} vs ${s.away_team}: pick=${pick?.picked_winner} in ${pick?.picked_games}, EV=${ev}`)
+})
   const lockedSeries = allSeriesFlat.filter(s => s.locked)
   const remainingPts = calcRemainingPts(allSeriesFlat)
   const projected = computeProjected(participants, allPicks, allSeriesFlat)
