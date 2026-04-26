@@ -985,6 +985,9 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
 
   const allSeriesFlat = [...(series.NHL || []), ...(series.NBA || [])]
   console.log('Stars series:', JSON.stringify(allSeriesFlat.find(s => s.home_team === 'Dallas Stars')))
+const projDebug = computeProjected(participants, allPicks, allSeriesFlat)
+const meDebug = projDebug.find(p => p.id === currentUser?.id)
+console.log('My projected:', JSON.stringify(meDebug))
   const lockedSeries = allSeriesFlat.filter(s => s.locked)
   const remainingPts = calcRemainingPts(allSeriesFlat)
   const projected = computeProjected(participants, allPicks, allSeriesFlat)
