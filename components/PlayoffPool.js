@@ -21,20 +21,6 @@ const PAYOUT_PCTS = [
   { label: '🏀 NBA 2nd',      pct: 0.08 },
 ]
 
-const GAME_LENGTH_DIST = {
-  NHL: { 4: 0.17, 5: 0.24, 6: 0.30, 7: 0.29 },
-  NBA: { 4: 0.15, 5: 0.22, 6: 0.31, 7: 0.32 },
-}
-
-const ODDS_API_NAME_MAP = {
-  "LA Kings":  "Los Angeles Kings",
-  "LA Lakers": "Los Angeles Lakers",
-}
-
-function toOddsAPIName(name) {
-  return ODDS_API_NAME_MAP[name] || name
-}
-
 function calcPoints(round, pickedWinner, actualWinner, actualGames, pickedGames) {
   const scale = [
     { winner: actualWinner, games: 4 },
@@ -60,40 +46,43 @@ function calcPoints(round, pickedWinner, actualWinner, actualGames, pickedGames)
   return winPts + gameAdj
 }
 
-function calcSeriesEV(pick, series, oddsData) {
+// Calculate EV for a pick using Series Correct Score odds from DB
+function calcSeriesEVFromOdds(pick, series) {
   if (!pick) return -4
-  const league = series.league
-  const dist = GAME_LENGTH_DIST[league]
-  const odds = oddsData[series.id]
-  if (!odds) {
-    let ev = 0
-    ;[4,5,6,7].forEach(g => {
-      ev += 0.5 * dist[g] * calcPoints(series.round, pick.picked_winner, series.home_team, g, pick.picked_games)
-      ev += 0.5 * dist[g] * calcPoints(series.round, pick.picked_winner, series.away_team, g, pick.picked_games)
-    })
-    return ev
-  }
-  const { homeWinProb, seriesScore } = odds
-  const awayWinProb = 1 - homeWinProb
-  const homeWins = seriesScore?.homeWins || 0
-  const awayWins = seriesScore?.awayWins || 0
-  const outcomes = []
-  ;[4,5,6,7].forEach(totalGames => {
-    const homeWinsNeeded = 4 - homeWins
-    const awayWinsNeeded = 4 - awayWins
-    const totalGamesRemaining = totalGames - homeWins - awayWins
-    if (totalGamesRemaining < Math.min(homeWinsNeeded, awayWinsNeeded)) return
-    if (totalGamesRemaining > homeWinsNeeded + awayWinsNeeded - 1) return
-    if (homeWinsNeeded > 0 && homeWinsNeeded <= totalGamesRemaining)
-      outcomes.push({ winner: series.home_team, games: totalGames, prob: homeWinProb * dist[totalGames] })
-    if (awayWinsNeeded > 0 && awayWinsNeeded <= totalGamesRemaining)
-      outcomes.push({ winner: series.away_team, games: totalGames, prob: awayWinProb * dist[totalGames] })
-  })
-  const totalProb = outcomes.reduce((s, o) => s + o.prob, 0)
+  const css = series.series_correct_score
+  if (!css) return 0
+
+  // series_correct_score format:
+  // { "home_4_0": 0.53, "home_4_1": 0.30, "home_4_2": 0.095, "home_4_3": 0.043, "away_4_3": 0.028, ... }
+  // Keys: home_4_X means home wins 4-X (home wins in X+4 games... no)
+  // Actually: home_4_0 = home wins 4-0 = home wins in 4 games
+  //           home_4_1 = home wins 4-1 = home wins in 5 games
+  //           home_4_2 = home wins 4-2 = home wins in 6 games
+  //           home_4_3 = home wins 4-3 = home wins in 7 games
+  //           away_4_3 = away wins 4-3 = away wins in 7 games
+  //           away_4_2 = away wins 4-2 = away wins in 6 games etc.
+
+  const outcomes = [
+    { key: 'home_4_0', winner: series.home_team, games: 4 },
+    { key: 'home_4_1', winner: series.home_team, games: 5 },
+    { key: 'home_4_2', winner: series.home_team, games: 6 },
+    { key: 'home_4_3', winner: series.home_team, games: 7 },
+    { key: 'away_4_0', winner: series.away_team, games: 4 },
+    { key: 'away_4_1', winner: series.away_team, games: 5 },
+    { key: 'away_4_2', winner: series.away_team, games: 6 },
+    { key: 'away_4_3', winner: series.away_team, games: 7 },
+  ]
+
+  // Normalize probabilities to sum to 1
+  const totalProb = outcomes.reduce((sum, o) => sum + (css[o.key] || 0), 0)
   if (totalProb === 0) return 0
+
   let ev = 0
   outcomes.forEach(o => {
-    ev += (o.prob / totalProb) * calcPoints(series.round, pick.picked_winner, o.winner, o.games, pick.picked_games)
+    const prob = (css[o.key] || 0) / totalProb
+    if (prob === 0) return
+    const pts = calcPoints(series.round, pick.picked_winner, o.winner, o.games, pick.picked_games)
+    ev += prob * pts
   })
   return ev
 }
@@ -114,63 +103,31 @@ function softmaxChance(participants, key, remainingPts) {
   return exps.map(e => Math.round((e / total) * 100))
 }
 
-function computeProjected(participants, allPicks, allSeriesFlat, oddsData) {
+function computeProjected(participants, allPicks, allSeriesFlat) {
+  // Only graded + in-progress (locked, no result, has series_correct_score)
   const gradedSeries = allSeriesFlat.filter(s => s.result_winner)
   const inProgressSeries = allSeriesFlat.filter(s => s.locked && !s.result_winner)
-  const futureSeries = allSeriesFlat.filter(s => !s.locked)
-
-  let totalLeaguePts = 0, totalLeaguePicks = 0
-  gradedSeries.forEach(s => {
-    allPicks.forEach(pk => {
-      if (pk.series_id !== s.id) return
-      totalLeaguePts += calcPoints(s.round, pk.picked_winner, s.result_winner, s.result_games, pk.picked_games)
-      totalLeaguePicks++
-    })
-    const pickedUsers = new Set(allPicks.filter(p => p.series_id === s.id).map(p => p.user_id))
-    participants.forEach(u => {
-      if (!pickedUsers.has(u.id)) { totalLeaguePts -= 4; totalLeaguePicks++ }
-    })
-  })
-  const leagueAvg = totalLeaguePicks > 0 ? totalLeaguePts / totalLeaguePicks : 0
-
-  const futureEVByRound = {}
-  futureSeries.forEach(s => {
-    const dist = GAME_LENGTH_DIST[s.league]
-    let ev = 0
-    ;[4,5,6,7].forEach(g => { ev += 0.5 * dist[g] * WINNER_PTS[s.round] })
-    if (!futureEVByRound[s.round]) futureEVByRound[s.round] = []
-    futureEVByRound[s.round].push(ev)
-  })
-  const meanFutureEV = {}
-  Object.entries(futureEVByRound).forEach(([r, evs]) => {
-    meanFutureEV[r] = evs.reduce((a,b) => a+b, 0) / evs.length
-  })
 
   return participants.map(u => {
-    let personalPts = 0, personalPicks = 0
+    let nhlProjected = 0
+    let nbaProjected = 0
+
+    // Graded — actual points
     gradedSeries.forEach(s => {
       const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id)
-      personalPts += pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
-      personalPicks++
+      const pts = pick
+        ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
+        : -4
+      if (s.league === 'NHL') nhlProjected += pts
+      else nbaProjected += pts
     })
-    const personalAvg = personalPicks > 0 ? personalPts / personalPicks : 0
-    const skillFactor = 0.25 * personalAvg + 0.75 * leagueAvg
 
-    let nhlProjected = u.nhlTotal || 0
-    let nbaProjected = u.nbaTotal || 0
-
+    // In-progress — EV from series correct score odds
     inProgressSeries.forEach(s => {
       const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id) || null
-      const ev = calcSeriesEV(pick, s, oddsData)
+      const ev = calcSeriesEVFromOdds(pick, s)
       if (s.league === 'NHL') nhlProjected += ev
       else nbaProjected += ev
-    })
-
-    futureSeries.forEach(s => {
-      const meanEV = meanFutureEV[s.round] || 0
-      const proj = meanEV + skillFactor
-      if (s.league === 'NHL') nhlProjected += proj
-      else nbaProjected += proj
     })
 
     return {
@@ -205,7 +162,6 @@ const TEAM_COLORS = {
   "Ottawa Senators":         { bg: "#C52032", text: "#ffffff", alt: "#C69214" },
   "Philadelphia Flyers":     { bg: "#F74902", text: "#ffffff", alt: "#000000" },
   "Pittsburgh Penguins":     { bg: "#FCB514", text: "#000000", alt: "#000000" },
-  "Los Angeles Kings":       { bg: "#111111", text: "#ffffff", alt: "#A2AAAD" },
   "Utah Mammoth":            { bg: "#6CACE4", text: "#000000", alt: "#1B3668" },
   "Anaheim Ducks":           { bg: "#F47A38", text: "#000000", alt: "#B5985A" },
   "Boston Celtics":          { bg: "#007A33", text: "#ffffff", alt: "#BA9653" },
@@ -213,7 +169,6 @@ const TEAM_COLORS = {
   "Milwaukee Bucks":         { bg: "#00471B", text: "#ffffff", alt: "#EEE1C6" },
   "Indiana Pacers":          { bg: "#002D62", text: "#ffffff", alt: "#FDBB30" },
   "Denver Nuggets":          { bg: "#0E2240", text: "#FEC524", alt: "#FEC524" },
-  "LA Lakers":               { bg: "#552583", text: "#FDB927", alt: "#FDB927" },
   "Los Angeles Lakers":      { bg: "#552583", text: "#FDB927", alt: "#FDB927" },
   "Oklahoma City Thunder":   { bg: "#007AC1", text: "#ffffff", alt: "#EF3B24" },
   "New Orleans Pelicans":    { bg: "#0C2340", text: "#ffffff", alt: "#C8102E" },
@@ -311,7 +266,6 @@ export default function PlayoffPool() {
   const [pendingPicks, setPendingPicks] = useState({})
   const [participants, setParticipants] = useState([])
   const [allPicks, setAllPicks] = useState([])
-  const [oddsData, setOddsData] = useState({})
   const [loading, setLoading] = useState(false)
 
   function showToast(msg, type = 'success') {
@@ -340,49 +294,7 @@ export default function PlayoffPool() {
 
   async function loadSeries() {
     const { data } = await supabase.from('series').select('*').order('round').order('game1_time')
-    if (data) {
-      setSeries({ NHL: data.filter(s => s.league === 'NHL'), NBA: data.filter(s => s.league === 'NBA') })
-      fetchOdds(data.filter(s => s.locked && !s.result_winner))
-    }
-  }
-
-  async function fetchOdds(activeSeries) {
-    if (!activeSeries.length) return
-    try {
-      const apiKey = process.env.NEXT_PUBLIC_ODDS_API_KEY
-      if (!apiKey) return
-      const newOdds = {}
-      for (const [sport, seriesList] of [['icehockey_nhl', activeSeries.filter(s => s.league === 'NHL')], ['basketball_nba', activeSeries.filter(s => s.league === 'NBA')]]) {
-        if (!seriesList.length) continue
-        const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sport}/odds?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=american`)
-        if (!res.ok) continue
-        const events = await res.json()
-        seriesList.forEach(s => {
-          const homeAPI = toOddsAPIName(s.home_team)
-          const awayAPI = toOddsAPIName(s.away_team)
-          const match = events.find(e =>
-            (e.home_team === homeAPI || e.away_team === homeAPI) &&
-            (e.home_team === awayAPI || e.away_team === awayAPI)
-          )
-          if (!match) return
-          const dk = match.bookmakers.find(b => b.key === 'draftkings') || match.bookmakers[0]
-          if (!dk) return
-          const h2h = dk.markets.find(m => m.key === 'h2h')
-          if (!h2h) return
-          const homeOdds = h2h.outcomes.find(o => o.name === homeAPI)
-          const awayOdds = h2h.outcomes.find(o => o.name === awayAPI)
-          if (!homeOdds || !awayOdds) return
-          function americanToProb(odds) {
-            return odds > 0 ? 100 / (odds + 100) : Math.abs(odds) / (Math.abs(odds) + 100)
-          }
-          const rawHome = americanToProb(homeOdds.price)
-          const rawAway = americanToProb(awayOdds.price)
-          const total = rawHome + rawAway
-          newOdds[s.id] = { homeWinProb: rawHome / total, seriesScore: s.series_score || { homeWins: 0, awayWins: 0 } }
-        })
-      }
-      setOddsData(prev => ({ ...prev, ...newOdds }))
-    } catch (e) { console.error('Odds fetch failed:', e) }
+    if (data) setSeries({ NHL: data.filter(s => s.league === 'NHL'), NBA: data.filter(s => s.league === 'NBA') })
   }
 
   async function loadPicks() {
@@ -449,8 +361,23 @@ export default function PlayoffPool() {
   }
 
   async function enterResult(seriesId, winner, games) {
-    await supabase.from('series').update({ result_winner: winner, result_games: games }).eq('id', seriesId)
+    await supabase.from('series').update({
+      result_winner: winner,
+      result_games: games,
+      result_date: new Date().toISOString(),
+      series_correct_score: null,
+    }).eq('id', seriesId)
     loadSeries(); loadParticipants(); showToast('Result saved ✓')
+  }
+
+  async function updateSeriesOdds(seriesId, correctScore, seriesScore) {
+    await supabase.from('series').update({
+      series_correct_score: correctScore,
+      series_score: seriesScore,
+      odds_updated_at: new Date().toISOString(),
+    }).eq('id', seriesId)
+    loadSeries()
+    showToast('Odds updated ✓')
   }
 
   async function togglePayment(userId, currentPaid) {
@@ -491,10 +418,10 @@ export default function PlayoffPool() {
           </header>
           <main className="main-content">
             {page === 'picks'         && <PicksPage series={series} userPicks={userPicks} pendingPicks={pendingPicks} setPendingPicks={setPendingPicks} submitPick={submitPick} />}
-            {page === 'standings'     && <StandingsPage participants={participants} allPicks={allPicks} series={series} oddsData={oddsData} currentUser={user} />}
+            {page === 'standings'     && <StandingsPage participants={participants} allPicks={allPicks} series={series} currentUser={user} />}
             {page === 'distributions' && <DistributionsPage series={series} allPicks={allPicks} participants={participants} />}
             {page === 'scoring'       && <ScoringRulesPage participants={participants} />}
-            {page === 'admin' && user.is_admin && <AdminPage series={series} toggleLock={toggleLock} enterResult={enterResult} participants={participants} allPicks={allPicks} showToast={showToast} togglePayment={togglePayment} />}
+            {page === 'admin' && user.is_admin && <AdminPage series={series} toggleLock={toggleLock} enterResult={enterResult} participants={participants} allPicks={allPicks} showToast={showToast} togglePayment={togglePayment} updateSeriesOdds={updateSeriesOdds} />}
           </main>
         </div>
         <nav className="bottom-nav">
@@ -787,7 +714,6 @@ function DistributionsPage({ series, allPicks, participants }) {
   const [openRounds, setOpenRounds] = useState({ [`${league}1`]: true })
 
   useEffect(() => { setOpenRounds({ [`${league}1`]: true }) }, [league])
-
   function toggleRound(key) { setOpenRounds(prev => ({ ...prev, [key]: !prev[key] })) }
 
   return (
@@ -805,9 +731,7 @@ function DistributionsPage({ series, allPicks, participants }) {
         return (
           <div key={r} style={{ marginBottom: 8 }}>
             <div className={`round-header ${isOpen ? 'rh-open' : ''}`} onClick={() => toggleRound(key)}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="rh-label">{league} · Round {r}</span>
-              </div>
+              <span className="rh-label">{league} · Round {r}</span>
               <span className="rh-arrow" style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▾</span>
             </div>
             {isOpen && (
@@ -845,13 +769,11 @@ function ScoringRulesPage({ participants }) {
     <div className="page">
       <div className="page-title">Scoring</div>
       <div className="page-sub">How points are calculated.</div>
-
       <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: 10, padding: '16px', marginBottom: 12, textAlign: 'center' }}>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>Maximum Possible Score</div>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 48, fontWeight: 800, color: '#f97316', lineHeight: 1 }}>{TOTAL_POSSIBLE_PTS} <span style={{ fontSize: 18, color: 'rgba(255,255,255,0.4)', fontWeight: 400 }}>pts</span></div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>every pick correct with exact series length</div>
       </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
         {rounds.map(r => (
           <div key={r.round} className="round-card">
@@ -862,32 +784,23 @@ function ScoringRulesPage({ participants }) {
           </div>
         ))}
       </div>
-
       <div style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 10, padding: '16px', marginBottom: 12, textAlign: 'center' }}>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>No Pick</div>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 48, fontWeight: 800, color: '#f87171', lineHeight: 1 }}>−4 <span style={{ fontSize: 18, color: 'rgba(255,255,255,0.4)', fontWeight: 400 }}>pts</span></div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>maximum penalty, applied to all unsubmitted picks</div>
       </div>
-
       <div style={{ background: 'rgba(110,232,122,0.08)', border: '1px solid rgba(110,232,122,0.2)', borderRadius: 10, padding: '16px', marginBottom: 12, textAlign: 'center' }}>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>Total Pot</div>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 48, fontWeight: 800, color: '#6ee87a', lineHeight: 1 }}>${pot.toLocaleString()}</div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>${BUY_IN} per participant</div>
       </div>
-
       <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Payouts</div>
       <div style={{ marginBottom: 16 }}>
         {PAYOUT_PCTS.map((p, i) => {
           const amount = Math.round((pot * p.pct) / 10) * 10
           const isFirst = i === 0
           return (
-            <div key={i} style={{
-              display: isFirst ? 'block' : 'inline-block',
-              width: isFirst ? '100%' : 'calc(50% - 4px)',
-              marginRight: !isFirst && i % 2 === 1 ? '8px' : '0',
-              marginBottom: 8,
-              verticalAlign: 'top',
-            }}>
+            <div key={i} style={{ display: isFirst ? 'block' : 'inline-block', width: isFirst ? '100%' : 'calc(50% - 4px)', marginRight: !isFirst && i % 2 === 1 ? '8px' : '0', marginBottom: 8, verticalAlign: 'top' }}>
               <div style={{ background: '#1c2030', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: '12px' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 4 }}>{p.label}</div>
                 <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: isFirst ? 32 : 24, fontWeight: 800, color: '#6ee87a', lineHeight: 1 }}>${amount.toLocaleString()}</div>
@@ -897,20 +810,15 @@ function ScoringRulesPage({ participants }) {
           )
         })}
       </div>
-
       <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>The 8-Position Scale</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 16px', marginBottom: 16 }}>
-        {['Winner in 4','Winner in 5','Winner in 6','Winner in 7','Loser in 7','Loser in 6','Loser in 5','Loser in 4'].map((label, i) => {
-          const col = i < 4 ? i : i - 4
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, gridColumn: (i < 4 ? 1 : 2), gridRow: col + 1 }}>
-              <div style={{ width: 22, height: 22, borderRadius: '50%', background: i < 4 ? 'rgba(249,115,22,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(249,115,22,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: i < 4 ? '#f97316' : '#f87171', flexShrink: 0 }}>{i+1}</div>
-              <div style={{ fontSize: 13, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)' }}>{label}</div>
-            </div>
-          )
-        })}
+        {['Winner in 4','Winner in 5','Winner in 6','Winner in 7','Loser in 7','Loser in 6','Loser in 5','Loser in 4'].map((label, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, gridColumn: i < 4 ? 1 : 2, gridRow: (i < 4 ? i : i - 4) + 1 }}>
+            <div style={{ width: 22, height: 22, borderRadius: '50%', background: i < 4 ? 'rgba(249,115,22,0.15)' : 'rgba(248,113,113,0.1)', border: `1px solid ${i < 4 ? 'rgba(249,115,22,0.4)' : 'rgba(248,113,113,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: i < 4 ? '#f97316' : '#f87171', flexShrink: 0 }}>{i+1}</div>
+            <div style={{ fontSize: 13, color: i < 4 ? '#e8eaf0' : 'rgba(255,255,255,0.4)' }}>{label}</div>
+          </div>
+        ))}
       </div>
-
       <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Examples — Round 1</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {examples.map((ex, i) => (
@@ -965,7 +873,11 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
         cum += pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
         return cum
       })
-      return { name: p.id === currentUserId ? 'You' : p.full_name, points, isMe: p.id === currentUserId, color: p.id === currentUserId ? '#f97316' : COLORS[pi % COLORS.length] }
+      return {
+        name: p.id === currentUserId ? 'You' : p.full_name,
+        points, isMe: p.id === currentUserId,
+        color: p.id === currentUserId ? '#f97316' : COLORS[pi % COLORS.length]
+      }
     })
 
     const allVals = allData.flatMap(d => d.points)
@@ -1067,14 +979,14 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
   )
 }
 
-function StandingsPage({ participants, allPicks, series, oddsData, currentUser }) {
+function StandingsPage({ participants, allPicks, series, currentUser }) {
   const [view, setView] = useState('live-combined')
   const [expandedId, setExpandedId] = useState(null)
 
   const allSeriesFlat = [...(series.NHL || []), ...(series.NBA || [])]
   const lockedSeries = allSeriesFlat.filter(s => s.locked)
   const remainingPts = calcRemainingPts(allSeriesFlat)
-  const projected = computeProjected(participants, allPicks, allSeriesFlat, oddsData)
+  const projected = computeProjected(participants, allPicks, allSeriesFlat)
 
   const projectedWithChance = (() => {
     const combinedChances = softmaxChance(projected, 'combinedProjected', remainingPts)
@@ -1122,36 +1034,23 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
     <div className="page">
       <div className="page-title">Standings</div>
       <div className="page-sub">
-        {isChart ? 'Cumulative score after each graded series.' : isProj ? 'Projected final score + chance of winning.' : 'Click a name to expand their picks.'}
+        {isChart ? 'Cumulative score after each graded series.' : isProj ? 'Round projected score + chance of leading.' : 'Click a name to expand their picks.'}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginBottom: 16 }}>
-        {TABS.map((row) =>
-          row.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setView(tab.key)}
-              style={{
-                padding: '7px 4px',
-                borderRadius: 6,
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: 0.5,
-                textTransform: 'uppercase',
-                border: `1px solid ${view === tab.key ? 'rgba(249,115,22,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                background: view === tab.key ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.02)',
-                color: view === tab.key ? '#f97316' : 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-                textAlign: 'center',
-                lineHeight: 1.3,
-                transition: 'all 0.15s',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))
-        )}
+        {TABS.map(row => row.map(tab => (
+          <button key={tab.key} onClick={() => setView(tab.key)} style={{
+            padding: '7px 4px', borderRadius: 6,
+            fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700,
+            letterSpacing: 0.5, textTransform: 'uppercase',
+            border: `1px solid ${view === tab.key ? 'rgba(249,115,22,0.4)' : 'rgba(255,255,255,0.08)'}`,
+            background: view === tab.key ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.02)',
+            color: view === tab.key ? '#f97316' : 'rgba(255,255,255,0.4)',
+            cursor: 'pointer', textAlign: 'center', lineHeight: 1.3, transition: 'all 0.15s',
+          }}>
+            {tab.label}
+          </button>
+        )))}
       </div>
 
       {isChart && (
@@ -1194,7 +1093,9 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
                       </div>
                     </td>
                     <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: current >= 0 ? '#6ee87a' : '#f87171' }}>{current >= 0 ? '+' : ''}{current}</td>
-                    <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: '#fff' }}>{proj >= 0 ? '+' : ''}{proj}</td>
+                    <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj !== null ? '#fff' : 'rgba(255,255,255,0.3)' }}>
+                      {proj !== null ? (proj >= 0 ? '+' : '') + proj : '—'}
+                    </td>
                     <td style={{ padding: '11px 12px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                         <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
@@ -1241,11 +1142,8 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
                 })
                 return (
                   <>
-                    <tr
-                      key={p.id}
-                      onClick={() => setExpandedId(isExpanded ? null : p.id)}
-                      style={{ cursor: 'pointer', background: isExpanded ? 'rgba(249,115,22,0.06)' : isPayout ? 'rgba(249,115,22,0.03)' : isMe ? 'rgba(249,115,22,0.02)' : 'transparent', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)' }}
-                    >
+                    <tr key={p.id} onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                      style={{ cursor: 'pointer', background: isExpanded ? 'rgba(249,115,22,0.06)' : isPayout ? 'rgba(249,115,22,0.03)' : isMe ? 'rgba(249,115,22,0.02)' : 'transparent', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)' }}>
                       <td style={{ padding: '11px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)' }}>{medal}</td>
                       <td style={{ padding: '11px 12px' }}>
                         <div style={{ fontSize: 13, fontWeight: 500, color: isExpanded ? '#f97316' : isMe ? '#fb923c' : '#e8eaf0' }}>{p.full_name}</div>
@@ -1305,13 +1203,20 @@ function StandingsPage({ participants, allPicks, series, oddsData, currentUser }
   )
 }
 
-function AdminPage({ series, toggleLock, enterResult, participants, allPicks, showToast, togglePayment }) {
+function AdminPage({ series, toggleLock, enterResult, participants, allPicks, showToast, togglePayment, updateSeriesOdds }) {
   const allSeries = [...series.NHL, ...series.NBA]
   const [resultInputs, setResultInputs] = useState({})
+  const [oddsInputs, setOddsInputs] = useState({})
+  const [scoreInputs, setScoreInputs] = useState({})
   const [adminTab, setAdminTab] = useState('series')
   const allRounds = [...new Set(allSeries.map(s => s.round))].sort()
   const leagues = ['NHL', 'NBA']
   const paidCount = participants.filter(p => p.paid).length
+
+  // Find most recent odds update across all series
+  const lastOddsUpdate = allSeries
+    .filter(s => s.odds_updated_at)
+    .sort((a, b) => new Date(b.odds_updated_at) - new Date(a.odds_updated_at))[0]?.odds_updated_at
 
   function getShortName(s) {
     return `${s.home_team.split(' ').pop()} vs ${s.away_team.split(' ').pop()}`
@@ -1320,8 +1225,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
   function generateMissingSummary() {
     const lines = ['🚨 League Alert - the following people are missing picks 🚨\n']
     let anyMissing = false
-
-    // Check all series that are currently OPEN (not locked) — picks can still be submitted
     leagues.forEach(lg => {
       allRounds.forEach(r => {
         const openSeries = (series[lg] || []).filter(s => s.round === r && !s.locked)
@@ -1339,7 +1242,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
         }
       })
     })
-
     if (!anyMissing) lines.push('Everyone has submitted all their picks! 🎉\n')
     lines.push('Submit picks at: https://playoffpool.vercel.app/')
     return lines.join('\n')
@@ -1351,12 +1253,56 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
       .catch(() => showToast('Could not copy', 'error'))
   }
 
+  async function saveOdds(seriesId) {
+    const odds = oddsInputs[seriesId] || {}
+    const score = scoreInputs[seriesId] || {}
+
+    const correctScore = {}
+    if (odds.h40) correctScore.home_4_0 = parseFloat(odds.h40)
+    if (odds.h41) correctScore.home_4_1 = parseFloat(odds.h41)
+    if (odds.h42) correctScore.home_4_2 = parseFloat(odds.h42)
+    if (odds.h43) correctScore.home_4_3 = parseFloat(odds.h43)
+    if (odds.a40) correctScore.away_4_0 = parseFloat(odds.a40)
+    if (odds.a41) correctScore.away_4_1 = parseFloat(odds.a41)
+    if (odds.a42) correctScore.away_4_2 = parseFloat(odds.a42)
+    if (odds.a43) correctScore.away_4_3 = parseFloat(odds.a43)
+
+    const seriesScore = {
+      homeWins: parseInt(score.homeWins || 0),
+      awayWins: parseInt(score.awayWins || 0),
+    }
+
+    await updateSeriesOdds(seriesId, correctScore, seriesScore)
+  }
+
+  // Convert American odds to implied probability
+  function americanToProb(american) {
+    const n = parseFloat(american)
+    if (isNaN(n)) return null
+    return n > 0 ? 100 / (n + 100) : Math.abs(n) / (Math.abs(n) + 100)
+  }
+
+  function setOddsField(seriesId, field, value) {
+    setOddsInputs(prev => ({ ...prev, [seriesId]: { ...(prev[seriesId] || {}), [field]: value } }))
+  }
+
+  function setScoreField(seriesId, field, value) {
+    setScoreInputs(prev => ({ ...prev, [seriesId]: { ...(prev[seriesId] || {}), [field]: value } }))
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '5px 7px', borderRadius: 5,
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    color: '#fff', fontSize: 11, fontFamily: "'Barlow', sans-serif",
+  }
+
   return (
     <div className="page">
       <div className="page-title">Commissioner</div>
       <div className="page-sub">Manage series, results, and picks.</div>
       <div className="league-tabs" style={{ marginBottom: 16 }}>
         <button className={`league-tab ${adminTab === 'series' ? 'lt-active' : ''}`} onClick={() => setAdminTab('series')}>Series</button>
+        <button className={`league-tab ${adminTab === 'odds' ? 'lt-active' : ''}`} onClick={() => setAdminTab('odds')}>Series Odds</button>
         <button className={`league-tab ${adminTab === 'picks' ? 'lt-active' : ''}`} onClick={() => setAdminTab('picks')}>Pick Status</button>
         <button className={`league-tab ${adminTab === 'payments' ? 'lt-active' : ''}`} onClick={() => setAdminTab('payments')}>Payments</button>
       </div>
@@ -1368,14 +1314,14 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
               <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>{lg}</div>
               {series[lg].map(s => (
                 <div key={s.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s.result_winner ? 0 : 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontSize: 12, color: '#e8eaf0' }}>{s.home_team} vs {s.away_team}</span>
                     <button className={`lock-toggle ${s.locked ? 'locked-btn' : 'unlocked'}`} onClick={() => toggleLock(lg, s.id)}>
                       {s.locked ? 'Unlock' : 'Lock'}
                     </button>
                   </div>
                   {!s.result_winner && s.locked && (
-                    <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
                       <select style={{ flex: 1, padding: '5px 8px', borderRadius: 5, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 12, fontFamily: "'Barlow', sans-serif" }}
                         onChange={e => setResultInputs(prev => ({ ...prev, [s.id]: { ...prev[s.id], winner: e.target.value } }))}>
                         <option value="">Winner...</option>
@@ -1412,11 +1358,97 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
             ))}
           </div>
           <div style={{ background: '#1c2030', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '14px' }}>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>Missing Picks</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12, lineHeight: 1.5 }}>Flags picks missing for all currently open series. Copy and paste into your group chat.</div>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>Missing Picks</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12, lineHeight: 1.5 }}>Flags picks missing for all currently open series.</div>
             <button className="blast-btn" onClick={copyMissingSummary}>📋 Copy Missing Picks Summary</button>
           </div>
         </>
+      )}
+
+      {adminTab === 'odds' && (
+        <div>
+          {lastOddsUpdate && (
+            <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>Odds Last Updated:</span>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+                {new Date(lastOddsUpdate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET
+              </span>
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 14, lineHeight: 1.6 }}>
+            Enter DraftKings Series Correct Score American odds for each active series. Enter the current series score. Leave fields blank for impossible outcomes (e.g. home_4_0 when series is 2-1).
+          </div>
+          {allSeries.filter(s => s.locked && !s.result_winner).map(s => {
+            const css = s.series_correct_score || {}
+            const ss = s.series_score || { homeWins: 0, awayWins: 0 }
+            const homeW = ss.homeWins || 0
+            const awayW = ss.awayWins || 0
+            return (
+              <div key={s.id} style={{ background: '#1c2030', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '14px', marginBottom: 10 }}>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: '#e8eaf0', marginBottom: 4 }}>
+                  {s.home_team} vs {s.away_team}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>
+                  {s.league} · Round {s.round}
+                  {s.odds_updated_at && <span style={{ marginLeft: 8, color: '#f97316' }}>· Updated {new Date(s.odds_updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })}</span>}
+                </div>
+
+                {/* Series Score */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 80 }}>Series Score:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{s.home_team.split(' ').pop()}</span>
+                    <input type="number" min="0" max="4" defaultValue={homeW}
+                      onChange={e => setScoreField(s.id, 'homeWins', e.target.value)}
+                      style={{ ...inputStyle, width: 44, textAlign: 'center' }} />
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>-</span>
+                    <input type="number" min="0" max="4" defaultValue={awayW}
+                      onChange={e => setScoreField(s.id, 'awayWins', e.target.value)}
+                      style={{ ...inputStyle, width: 44, textAlign: 'center' }} />
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{s.away_team.split(' ').pop()}</span>
+                  </div>
+                </div>
+
+                {/* Correct Score Odds */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {[
+                    { key: 'h40', label: `${s.home_team.split(' ').pop()} 4-0`, existing: css.home_4_0 },
+                    { key: 'a40', label: `${s.away_team.split(' ').pop()} 4-0`, existing: css.away_4_0 },
+                    { key: 'h41', label: `${s.home_team.split(' ').pop()} 4-1`, existing: css.home_4_1 },
+                    { key: 'a41', label: `${s.away_team.split(' ').pop()} 4-1`, existing: css.away_4_1 },
+                    { key: 'h42', label: `${s.home_team.split(' ').pop()} 4-2`, existing: css.home_4_2 },
+                    { key: 'a42', label: `${s.away_team.split(' ').pop()} 4-2`, existing: css.away_4_2 },
+                    { key: 'h43', label: `${s.home_team.split(' ').pop()} 4-3`, existing: css.home_4_3 },
+                    { key: 'a43', label: `${s.away_team.split(' ').pop()} 4-3`, existing: css.away_4_3 },
+                  ].map(field => {
+                    const prob = field.existing ? `${Math.round(field.existing * 100)}%` : null
+                    return (
+                      <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', minWidth: 72 }}>{field.label}</span>
+                        <input
+                          type="text" placeholder={field.existing ? `${field.existing > 0 ? '+' : ''}${Math.round(field.existing > 1 ? field.existing : (field.existing > 0 ? (1/field.existing - 1) * 100 : -100))}` : 'e.g. +230'}
+                          onChange={e => {
+                            const prob = americanToProb(e.target.value)
+                            if (prob !== null) setOddsField(s.id, field.key, prob)
+                          }}
+                          style={{ ...inputStyle, flex: 1 }}
+                        />
+                        {prob && <span style={{ fontSize: 10, color: '#f97316', minWidth: 28 }}>{prob}</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+                <button onClick={() => saveOdds(s.id)}
+                  style={{ marginTop: 12, width: '100%', padding: '8px', borderRadius: 6, background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer' }}>
+                  Save Odds & Score
+                </button>
+              </div>
+            )
+          })}
+          {allSeries.filter(s => s.locked && !s.result_winner).length === 0 && (
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: '24px 0' }}>No active series to update.</div>
+          )}
+        </div>
       )}
 
       {adminTab === 'picks' && (
@@ -1495,25 +1527,20 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
           </div>
           <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
             {participants
-              .slice()
-              .sort((a, b) => a.full_name.localeCompare(b.full_name))
+              .slice().sort((a, b) => a.full_name.localeCompare(b.full_name))
               .map((u, i, arr) => (
                 <div key={u.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: '#e8eaf0' }}>{u.full_name}</div>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{u.phone || 'No phone'}</div>
                   </div>
-                  <button
-                    onClick={() => togglePayment(u.id, u.paid)}
-                    style={{
-                      padding: '6px 16px', borderRadius: 6,
-                      fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700,
-                      letterSpacing: 0.5, textTransform: 'uppercase', border: 'none', cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      background: u.paid ? 'rgba(110,232,122,0.15)' : 'rgba(248,113,113,0.15)',
-                      color: u.paid ? '#6ee87a' : '#f87171',
-                    }}
-                  >
+                  <button onClick={() => togglePayment(u.id, u.paid)} style={{
+                    padding: '6px 16px', borderRadius: 6,
+                    fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700,
+                    letterSpacing: 0.5, textTransform: 'uppercase', border: 'none', cursor: 'pointer',
+                    background: u.paid ? 'rgba(110,232,122,0.15)' : 'rgba(248,113,113,0.15)',
+                    color: u.paid ? '#6ee87a' : '#f87171',
+                  }}>
                     {u.paid ? '✓ Paid' : 'Unpaid'}
                   </button>
                 </div>
@@ -1583,7 +1610,7 @@ const css = `
   .sc-locked { opacity: 0.75; }
   .sc-locked::after { content: 'LOCKED'; position: absolute; top: 10px; right: 10px; font-size: 9px; font-weight: 700; letter-spacing: 1px; background: rgba(248,113,113,0.15); color: #f87171; padding: 2px 6px; border-radius: 3px; font-family: 'Barlow Condensed', sans-serif; }
   .sc-submitted::after { content: 'SUBMITTED'; position: absolute; top: 10px; right: 10px; font-size: 9px; font-weight: 700; letter-spacing: 1px; background: rgba(249,115,22,0.15); color: #f97316; padding: 2px 6px; border-radius: 3px; font-family: 'Barlow Condensed', sans-serif; }
-  .sc-date { font-size: 10px; color: rgba(255,255,255,0.25); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }
+  .sc-date { font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }
   .matchup { display: flex; gap: 8px; margin-bottom: 10px; }
   .team-opt { flex: 1; padding: 10px 8px; border-radius: 7px; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; transition: all 0.2s; font-family: 'Barlow', sans-serif; font-size: 12px; font-weight: 500; text-align: center; line-height: 1.3; }
   .team-opt:hover:not(:disabled) { border-color: rgba(255,255,255,0.25) !important; }
