@@ -666,13 +666,41 @@ function SeriesDistCard({ s, allPicks, participants }) {
             <DonutChart slices={slices} size={160} />
             <div style={{ flex: 1, paddingTop: 4 }}>
               <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>Distribution</div>
-              {legend.map((l, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-                  <div style={{ width: 11, height: 11, borderRadius: 3, background: l.bg, border: `2px solid ${l.border}`, flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', flex: 1 }}>{l.label}</span>
-                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: '#fff' }}>{l.count}</span>
-                </div>
-              ))}
+              {legend.map((l, i) => {
+                let prob = null
+                if (s.result_winner) {
+                  // Graded series — 100% for winning outcome, 0% for all others
+                  const winnerGames = s.result_games
+                  const winnerTeam = s.result_winner
+                  const isWinningOutcome = l.label === `${winnerTeam.split(' ').pop()} in ${winnerGames}`
+                  prob = isWinningOutcome ? '100%' : '0%'
+                } else if (s.series_correct_score) {
+                  // In-progress — normalized probability from series_correct_score
+                  const css = s.series_correct_score
+                  const gamesMap = { 4: 0, 5: 1, 6: 2, 7: 3 }
+                  const labelParts = l.label.split(' in ')
+                  const labelTeam = labelParts[0]
+                  const labelGames = parseInt(labelParts[1])
+                  const isHome = s.home_team.split(' ').pop() === labelTeam
+                  const isAway = s.away_team.split(' ').pop() === labelTeam
+                  const key = isHome ? `home_4_${gamesMap[labelGames]}` : isAway ? `away_4_${gamesMap[labelGames]}` : null
+                  if (key) {
+                    const totalProb = Object.values(css).reduce((sum, v) => sum + v, 0)
+                    const rawProb = css[key] || 0
+                    prob = totalProb > 0 ? `${Math.round((rawProb / totalProb) * 100)}%` : '0%'
+                  }
+                }
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+                    <div style={{ width: 11, height: 11, borderRadius: 3, background: l.bg, border: `2px solid ${l.border}`, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', flex: 1 }}>{l.label}</span>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: '#fff' }}>{l.count}</span>
+                    {prob !== null && (
+                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: prob === '100%' ? '#6ee87a' : prob === '0%' ? 'rgba(255,255,255,0.2)' : '#f97316', minWidth: 36, textAlign: 'right' }}>{prob}</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
           <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>Player Picks</div>
@@ -1107,7 +1135,7 @@ inProgress.forEach(s => {
                 <th style={{ textAlign: 'left', padding: '8px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Name</th>
                 <th style={{ textAlign: 'right', padding: '8px 8px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Now</th>
                 <th style={{ textAlign: 'right', padding: '8px 8px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Proj</th>
-                <th style={{ textAlign: 'right', padding: '8px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Win%</th>
+                <th style={{ textAlign: 'right', padding: '8px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Lead%</th>
               </tr>
             </thead>
             <tbody>
@@ -1118,28 +1146,85 @@ inProgress.forEach(s => {
                 const proj = league === 'nhl' ? p.nhlProjected : league === 'nba' ? p.nbaProjected : p.combinedProjected
                 const chance = league === 'nhl' ? p.nhlChanceFirst : league === 'nba' ? p.nbaChanceFirst : p.chanceFirst
                 const isMe = p.id === currentUser?.id
+                const isExpanded = expandedId === p.id
+                const playerLockedSeries = lockedSeries.filter(s => league === 'combined' || s.league === league.toUpperCase())
+                const playerPicks = playerLockedSeries.map(s => {
+                  const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
+                  let pts = null
+                  let ev = null
+                  if (s.result_winner) {
+                    pts = pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
+                  } else {
+                    ev = pick ? calcSeriesEVFromOdds(pick, s) : -4
+                  }
+                  return { s, pick, pts, ev }
+                })
                 return (
-                  <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: isMe ? 'rgba(249,115,22,0.04)' : 'transparent' }}>
-                    <td style={{ padding: '11px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)' }}>{medal}</td>
-                    <td style={{ padding: '11px 12px' }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: isMe ? '#f97316' : '#e8eaf0' }}>
-                        {p.full_name}
-                        {isMe && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
-                      </div>
-                    </td>
-                    <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: current >= 0 ? '#6ee87a' : '#f87171' }}>{current >= 0 ? '+' : ''}{current}</td>
-                    <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj !== null ? '#fff' : 'rgba(255,255,255,0.3)' }}>
-                      {proj !== null ? (proj >= 0 ? '+' : '') + proj : '—'}
-                    </td>
-                    <td style={{ padding: '11px 12px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                  <>
+                    <tr key={p.id} onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                      style={{ cursor: 'pointer', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)', background: isExpanded ? 'rgba(249,115,22,0.06)' : isMe ? 'rgba(249,115,22,0.04)' : 'transparent' }}>
+                      <td style={{ padding: '11px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)' }}>{medal}</td>
+                      <td style={{ padding: '11px 12px' }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: isExpanded ? '#f97316' : isMe ? '#f97316' : '#e8eaf0' }}>
+                          {p.full_name}
+                          {isMe && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
                         </div>
-                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
-                      </div>
-                    </td>
-                  </tr>
+                        <div style={{ fontSize: 10, color: isExpanded ? '#f97316' : 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>
+                          {isExpanded ? 'HIDE ▲' : 'PICKS ▼'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: current >= 0 ? '#6ee87a' : '#f87171' }}>{current >= 0 ? '+' : ''}{current}</td>
+                      <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj !== null ? '#fff' : 'rgba(255,255,255,0.3)' }}>
+                        {proj !== null ? (proj >= 0 ? '+' : '') + proj : '—'}
+                      </td>
+                      <td style={{ padding: '11px 12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                          </div>
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${p.id}-proj-exp`}>
+                        <td colSpan={5} style={{ padding: '0 10px 12px', background: 'rgba(249,115,22,0.03)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          {playerPicks.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', padding: '8px 0' }}>No locked series yet.</div>}
+                          {playerPicks.map(({ s, pick, pts, ev }) => {
+                            const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
+                            const displayVal = s.result_winner ? pts : ev
+                            const isEV = !s.result_winner
+                            return (
+                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 7, gap: 8, marginTop: 5, border: '1px solid rgba(255,255,255,0.04)' }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                                    {s.league} R{s.round}
+                                    {s.result_winner && <span style={{ color: '#6ee87a', marginLeft: 5 }}>· {s.result_winner.split(' ').pop()} in {s.result_games}</span>}
+                                    {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
+                                  </div>
+                                </div>
+                                {pick ? (
+                                  <>
+                                    <span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span>
+                                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 28 }}>in {pick.picked_games}</span>
+                                    <div style={{ minWidth: 48, textAlign: 'right' }}>
+                                      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: displayVal === null ? 'rgba(255,255,255,0.3)' : displayVal > 0 ? '#6ee87a' : displayVal < 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
+                                        {displayVal === null ? '—' : displayVal > 0 ? `+${Math.round(displayVal * 10) / 10}` : Math.round(displayVal * 10) / 10}
+                                      </div>
+                                      {isEV && <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>EV</div>}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <span style={{ fontSize: 11, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 7px', background: 'rgba(248,113,113,0.1)', borderRadius: 4 }}>NO PICK −4</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 )
               })}
             </tbody>
