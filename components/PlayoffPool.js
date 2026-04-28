@@ -1128,107 +1128,96 @@ inProgress.forEach(s => {
 
       {isProj && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '8px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)', width: 40 }}>#</th>
-                <th style={{ textAlign: 'left', padding: '8px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Name</th>
-                <th style={{ textAlign: 'right', padding: '8px 8px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Now</th>
-                <th style={{ textAlign: 'right', padding: '8px 8px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Proj</th>
-                <th style={{ textAlign: 'right', padding: '8px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>Lead%</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((p, i) => {
-                const rank = i + 1
-                const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank
-                const current = league === 'nhl' ? p.nhlTotal : league === 'nba' ? p.nbaTotal : p.combined
-                const proj = league === 'nhl' ? p.nhlProjected : league === 'nba' ? p.nbaProjected : p.combinedProjected
-                const chance = league === 'nhl' ? p.nhlChanceFirst : league === 'nba' ? p.nbaChanceFirst : p.chanceFirst
-                const isMe = p.id === currentUser?.id
-                const isExpanded = expandedId === p.id
-                const playerLockedSeries = lockedSeries.filter(s => league === 'combined' || s.league === league.toUpperCase())
-                const playerPicks = playerLockedSeries.map(s => {
-                  const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
-                  let pts = null
-                  let ev = null
-                  if (s.result_winner) {
-                    pts = pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
-                  } else {
-                    ev = pick ? calcSeriesEVFromOdds(pick, s) : -4
-                  }
-                  return { s, pick, pts, ev }
-                })
-                return (
-                  <>
-                    <tr key={p.id} onClick={() => setExpandedId(isExpanded ? null : p.id)}
-                      style={{ cursor: 'pointer', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)', background: isExpanded ? 'rgba(249,115,22,0.06)' : isMe ? 'rgba(249,115,22,0.04)' : 'transparent' }}>
-                      <td style={{ padding: '11px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)' }}>{medal}</td>
-                      <td style={{ padding: '11px 12px' }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: isExpanded ? '#f97316' : isMe ? '#f97316' : '#e8eaf0' }}>
-                          {p.full_name}
-                          {isMe && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
-                        </div>
-                        <div style={{ fontSize: 10, color: isExpanded ? '#f97316' : 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>
-                          {isExpanded ? 'HIDE ▲' : 'PICKS ▼'}
-                        </div>
-                      </td>
-                      <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: current >= 0 ? '#6ee87a' : '#f87171' }}>{current >= 0 ? '+' : ''}{current}</td>
-                      <td style={{ padding: '11px 8px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj !== null ? '#fff' : 'rgba(255,255,255,0.3)' }}>
-                        {proj !== null ? (proj >= 0 ? '+' : '') + proj : '—'}
-                      </td>
-                      <td style={{ padding: '11px 12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+          {/* Header */}
+          <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr 1fr 52px 52px 72px', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            {['#','Name','Pick','Pts','Proj','Lead%'].map((h, i) => (
+              <div key={i} style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: i >= 3 ? 'right' : i === 2 ? 'right' : 'left', paddingRight: i === 2 ? 12 : 0 }}>{h}</div>
+            ))}
+          </div>
+          {sorted.map((p, i) => {
+            const rank = i + 1
+            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank
+            const current = league === 'nhl' ? p.nhlTotal : league === 'nba' ? p.nbaTotal : p.combined
+            const proj = league === 'nhl' ? p.nhlProjected : league === 'nba' ? p.nbaProjected : p.combinedProjected
+            const chance = league === 'nhl' ? p.nhlChanceFirst : league === 'nba' ? p.nbaChanceFirst : p.chanceFirst
+            const isMe = p.id === currentUser?.id
+            const isExpanded = expandedId === p.id
+            const playerLockedSeries = lockedSeries.filter(s => league === 'combined' || s.league === league.toUpperCase())
+            const playerPicks = playerLockedSeries.map(s => {
+              const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
+              let pts = null, ev = null
+              if (s.result_winner) pts = pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
+              else ev = pick ? calcSeriesEVFromOdds(pick, s) : -4
+              return { s, pick, pts, ev }
+            })
+            const gridRow = { display: 'grid', gridTemplateColumns: '28px 1fr 1fr 52px 52px 72px', alignItems: 'center', padding: '10px 12px', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)', background: isExpanded ? 'rgba(249,115,22,0.06)' : isMe ? 'rgba(249,115,22,0.04)' : 'transparent', cursor: 'pointer' }
+            return (
+              <div key={p.id}>
+                <div style={gridRow} onClick={() => setExpandedId(isExpanded ? null : p.id)}>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)' }}>{medal}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: isExpanded ? '#f97316' : isMe ? '#f97316' : '#e8eaf0' }}>
+                      {p.full_name}
+                      {isMe && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: isExpanded ? '#f97316' : 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>{isExpanded ? 'HIDE ▲' : 'PICKS ▼'}</div>
+                  </div>
+                  <div></div>
+                  <div style={{ textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: current >= 0 ? '#6ee87a' : '#f87171' }}>{current}</div>
+                  <div style={{ textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj >= 0 ? '#6ee87a' : '#f87171' }}>{proj}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                    <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
+                  </div>
+                </div>
+                {isExpanded && (
+                  <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'rgba(249,115,22,0.03)' }}>
+                    {playerPicks.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', padding: '8px 12px' }}>No locked series yet.</div>}
+                    {playerPicks.map(({ s, pick, pts, ev }) => {
+                      const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
+                      const isEV = !s.result_winner
+                      const displayVal = isEV ? ev : pts
+                      const valColor = displayVal === null ? 'rgba(255,255,255,0.3)' : displayVal > 0 ? '#6ee87a' : displayVal < 0 ? '#f87171' : 'rgba(255,255,255,0.4)'
+                      const valDisplay = displayVal === null ? '—' : Math.round(displayVal * 10) / 10
+                      return (
+                        <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 1fr 52px 52px 72px', alignItems: 'center', padding: '7px 12px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div></div>
+                          <div>
+                            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                              {s.league} R{s.round}
+                              {s.result_winner && <span style={{ color: '#6ee87a', marginLeft: 5 }}>· {s.result_winner.split(' ').pop()} in {s.result_games}</span>}
+                              {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
+                            </div>
                           </div>
-                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, paddingRight: 12 }}>
+                            {pick
+                              ? <><span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span><span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 28 }}>in {pick.picked_games}</span></>
+                              : <span style={{ fontSize: 11, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 7px', background: 'rgba(248,113,113,0.1)', borderRadius: 4 }}>NO PICK</span>
+                            }
+                          </div>
+                          {/* Pts col — graded only */}
+                          <div style={{ textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: valColor }}>
+                            {!isEV ? valDisplay : ''}
+                          </div>
+                          {/* Proj col — in-progress only */}
+                          <div style={{ textAlign: 'right' }}>
+                            {isEV && <>
+                              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: valColor }}>{valDisplay}</div>
+                              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5, textAlign: 'right' }}>EV</div>
+                            </>}
+                          </div>
+                          <div></div>
                         </div>
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr key={`${p.id}-proj-exp`}>
-                        <td colSpan={5} style={{ padding: '0 10px 12px', background: 'rgba(249,115,22,0.03)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          {playerPicks.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', padding: '8px 0' }}>No locked series yet.</div>}
-                          {playerPicks.map(({ s, pick, pts, ev }) => {
-                            const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
-                            const displayVal = s.result_winner ? pts : ev
-                            const isEV = !s.result_winner
-                            return (
-                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 7, gap: 8, marginTop: 5, border: '1px solid rgba(255,255,255,0.04)' }}>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
-                                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
-                                    {s.league} R{s.round}
-                                    {s.result_winner && <span style={{ color: '#6ee87a', marginLeft: 5 }}>· {s.result_winner.split(' ').pop()} in {s.result_games}</span>}
-                                    {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
-                                  </div>
-                                </div>
-                                {pick ? (
-                                  <>
-                                    <span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span>
-                                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 28 }}>in {pick.picked_games}</span>
-                                    <div style={{ minWidth: 48, textAlign: 'right' }}>
-                                      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: displayVal === null ? 'rgba(255,255,255,0.3)' : displayVal > 0 ? '#6ee87a' : displayVal < 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
-                                        {displayVal === null ? '—' : displayVal > 0 ? `+${Math.round(displayVal * 10) / 10}` : Math.round(displayVal * 10) / 10}
-                                      </div>
-                                      {isEV && <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>EV</div>}
-                                    </div>
-                                  </>
-                                ) : (
-                                  <span style={{ fontSize: 11, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 7px', background: 'rgba(248,113,113,0.1)', borderRadius: 4 }}>NO PICK −4</span>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                )
-              })}
-            </tbody>
-          </table>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -1274,10 +1263,10 @@ inProgress.forEach(s => {
                         </div>
                       </td>
                       {league === 'combined' && <>
-                        <td style={{ padding: '11px 8px', textAlign: 'right', fontSize: 12, fontWeight: 600, color: p.nhlTotal >= 0 ? '#6ee87a' : '#f87171' }}>{p.nhlTotal >= 0 ? '+' : ''}{p.nhlTotal}</td>
-                        <td style={{ padding: '11px 8px', textAlign: 'right', fontSize: 12, fontWeight: 600, color: p.nbaTotal >= 0 ? '#6ee87a' : '#f87171' }}>{p.nbaTotal >= 0 ? '+' : ''}{p.nbaTotal}</td>
+                        <td style={{ padding: '11px 8px', textAlign: 'right', fontSize: 12, fontWeight: 600, color: p.nhlTotal >= 0 ? '#6ee87a' : '#f87171' }}>{p.nhlTotal}</td>
+                        <td style={{ padding: '11px 8px', textAlign: 'right', fontSize: 12, fontWeight: 600, color: p.nbaTotal >= 0 ? '#6ee87a' : '#f87171' }}>{p.nbaTotal}</td>
                       </>}
-                      <td style={{ padding: '11px 12px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 700, color: score >= 0 ? '#6ee87a' : '#f87171' }}>{score >= 0 ? '+' : ''}{score}</td>
+                      <td style={{ padding: '11px 12px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 700, color: score >= 0 ? '#6ee87a' : '#f87171' }}>{score}</td>
                     </tr>
                     {isExpanded && (
                       <tr key={`${p.id}-exp`}>
@@ -1300,7 +1289,7 @@ inProgress.forEach(s => {
                                     <span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span>
                                     <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 28 }}>in {pick.picked_games}</span>
                                     <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, minWidth: 34, textAlign: 'right', color: pts === null ? 'rgba(255,255,255,0.3)' : pts > 0 ? '#6ee87a' : pts < 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
-                                      {pts === null ? '—' : pts > 0 ? `+${pts}` : pts}
+                                      {pts === null ? '—' : pts}
                                     </span>
                                   </>
                                 ) : (
