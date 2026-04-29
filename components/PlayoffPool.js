@@ -635,42 +635,52 @@ function SeriesDistCard({ s, allPicks, participants }) {
       </button>
       {open && (
         <div style={{ padding: '0 14px 14px' }}>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 16, alignItems: 'flex-start' }}>
-            <DonutChart slices={slices} size={160} />
-            <div style={{ flex: 1, paddingTop: 4 }}>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>Distribution</div>
-              {legend.map((l, i) => {
-                let prob = null
-                if (s.result_winner) {
-                  const isWinningOutcome = l.label === `${s.result_winner.split(' ').pop()} in ${s.result_games}`
-                  prob = isWinningOutcome ? '100%' : '0%'
-                } else if (s.series_correct_score) {
-                  const css = s.series_correct_score
-                  const gamesMap = { 4: 0, 5: 1, 6: 2, 7: 3 }
-                  const labelParts = l.label.split(' in ')
-                  const labelTeam = labelParts[0]
-                  const labelGames = parseInt(labelParts[1])
-                  const isHome = s.home_team.split(' ').pop() === labelTeam
-                  const isAway = s.away_team.split(' ').pop() === labelTeam
-                  const key = isHome ? `home_4_${gamesMap[labelGames]}` : isAway ? `away_4_${gamesMap[labelGames]}` : null
-                  if (key) {
-                    const totalProb = Object.values(css).reduce((sum, v) => sum + v, 0)
-                    const rawProb = css[key] || 0
-                    prob = totalProb > 0 ? `${Math.round((rawProb / totalProb) * 100)}%` : '0%'
-                  }
-                }
-                return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-                    <div style={{ width: 11, height: 11, borderRadius: 3, background: l.bg, border: `2px solid ${l.border}`, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', flex: 1 }}>{l.label}</span>
-                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: '#fff' }}>{l.count}</span>
-                    {prob !== null && (
-                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: prob === '100%' ? '#6ee87a' : prob === '0%' ? 'rgba(255,255,255,0.2)' : '#f97316', minWidth: 36, textAlign: 'right' }}>{prob}</span>
-                    )}
-                  </div>
-                )
-              })}
+          {/* Donut centered */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <DonutChart slices={slices} size={180} />
+          </div>
+
+          {/* Distribution table */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0 12px', marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)' }}>Outcome</div>
+              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>Picks</div>
+              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>Prob</div>
             </div>
+            {legend.map((l, i) => {
+              let prob = null
+              if (s.result_winner) {
+                const isWinningOutcome = l.label === `${s.result_winner.split(' ').pop()} in ${s.result_games}`
+                prob = isWinningOutcome ? '100%' : '0%'
+              } else if (s.series_correct_score) {
+                const css = s.series_correct_score
+                const gamesMap = { 4: 0, 5: 1, 6: 2, 7: 3 }
+                const labelParts = l.label.split(' in ')
+                const labelTeam = labelParts[0]
+                const labelGames = parseInt(labelParts[1])
+                const isHome = s.home_team.split(' ').pop() === labelTeam
+                const isAway = s.away_team.split(' ').pop() === labelTeam
+                const key = isHome ? `home_4_${gamesMap[labelGames]}` : isAway ? `away_4_${gamesMap[labelGames]}` : null
+                if (key) {
+                  const totalProb = Object.values(css).reduce((sum, v) => sum + v, 0)
+                  const rawProb = css[key] || 0
+                  prob = totalProb > 0 ? `${Math.round((rawProb / totalProb) * 100)}%` : '0%'
+                }
+              }
+              const probColor = prob === '100%' ? '#6ee87a' : prob === '0%' ? 'rgba(255,255,255,0.2)' : '#f97316'
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0 12px', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 11, height: 11, borderRadius: 3, background: l.bg, border: `2px solid ${l.border}`, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)' }}>{l.label}</span>
+                  </div>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: '#fff', textAlign: 'right' }}>{l.count}</div>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: probColor, textAlign: 'right', minWidth: 40 }}>
+                    {prob !== null ? prob : '—'}
+                  </div>
+                </div>
+              )
+            })}
           </div>
           <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>Player Picks</div>
           {participants.map(u => {
