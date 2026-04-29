@@ -46,22 +46,10 @@ function calcPoints(round, pickedWinner, actualWinner, actualGames, pickedGames)
   return winPts + gameAdj
 }
 
-// Calculate EV for a pick using Series Correct Score odds from DB
 function calcSeriesEVFromOdds(pick, series) {
   if (!pick) return -4
   const css = series.series_correct_score
   if (!css) return 0
-
-  // series_correct_score format:
-  // { "home_4_0": 0.53, "home_4_1": 0.30, "home_4_2": 0.095, "home_4_3": 0.043, "away_4_3": 0.028, ... }
-  // Keys: home_4_X means home wins 4-X (home wins in X+4 games... no)
-  // Actually: home_4_0 = home wins 4-0 = home wins in 4 games
-  //           home_4_1 = home wins 4-1 = home wins in 5 games
-  //           home_4_2 = home wins 4-2 = home wins in 6 games
-  //           home_4_3 = home wins 4-3 = home wins in 7 games
-  //           away_4_3 = away wins 4-3 = away wins in 7 games
-  //           away_4_2 = away wins 4-2 = away wins in 6 games etc.
-
   const outcomes = [
     { key: 'home_4_0', winner: series.home_team, games: 4 },
     { key: 'home_4_1', winner: series.home_team, games: 5 },
@@ -72,11 +60,8 @@ function calcSeriesEVFromOdds(pick, series) {
     { key: 'away_4_2', winner: series.away_team, games: 6 },
     { key: 'away_4_3', winner: series.away_team, games: 7 },
   ]
-
-  // Normalize probabilities to sum to 1
   const totalProb = outcomes.reduce((sum, o) => sum + (css[o.key] || 0), 0)
   if (totalProb === 0) return 0
-
   let ev = 0
   outcomes.forEach(o => {
     const prob = (css[o.key] || 0) / totalProb
@@ -104,32 +89,20 @@ function softmaxChance(participants, key, remainingPts) {
 }
 
 function computeProjected(participants, allPicks, allSeriesFlat) {
-  // Only graded + in-progress (locked, no result, has series_correct_score)
   const gradedSeries = allSeriesFlat.filter(s => s.result_winner)
   const inProgressSeries = allSeriesFlat.filter(s => s.locked && !s.result_winner)
-
   return participants.map(u => {
-    let nhlProjected = 0
-    let nbaProjected = 0
-
-    // Graded — actual points
+    let nhlProjected = 0, nbaProjected = 0
     gradedSeries.forEach(s => {
       const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id)
-      const pts = pick
-        ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
-        : -4
-      if (s.league === 'NHL') nhlProjected += pts
-      else nbaProjected += pts
+      const pts = pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
+      if (s.league === 'NHL') nhlProjected += pts; else nbaProjected += pts
     })
-
-    // In-progress — EV from series correct score odds
     inProgressSeries.forEach(s => {
       const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id) || null
       const ev = calcSeriesEVFromOdds(pick, s)
-      if (s.league === 'NHL') nhlProjected += ev
-      else nbaProjected += ev
+      if (s.league === 'NHL') nhlProjected += ev; else nbaProjected += ev
     })
-
     return {
       ...u,
       nhlProjected: Math.round(nhlProjected * 10) / 10,
@@ -543,7 +516,7 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
                 {isActive && <span className="rh-badge">ACTIVE</span>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {!isActive && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{pickedCount}/{roundSeries.length} · <span style={{ color: roundPts >= 0 ? '#6ee87a' : '#f87171', fontWeight: 700 }}>{roundPts >= 0 ? '+' : ''}{roundPts}</span></span>}
+                {!isActive && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{pickedCount}/{roundSeries.length} · <span style={{ color: roundPts >= 0 ? '#6ee87a' : '#f87171', fontWeight: 700 }}>{roundPts}</span></span>}
                 <span className="rh-arrow" style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▾</span>
               </div>
             </div>
@@ -590,7 +563,7 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
                       {s.result_winner ? (
                         <div className="result-badge">
                           <span>Result: <strong>{s.result_winner}</strong> in {s.result_games}</span>
-                          {pts !== null && <span className={pts >= 0 ? 'pts-pos' : 'pts-neg'} style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700 }}>{pts >= 0 ? '+' : ''}{pts} pts</span>}
+                          {pts !== null && <span className={pts >= 0 ? 'pts-pos' : 'pts-neg'} style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700 }}>{pts}</span>}
                         </div>
                       ) : !s.locked && (
                         <button className="submit-pick-btn" disabled={!pending.winner || !pending.games} onClick={() => submitPick(s.id)}>
@@ -669,13 +642,9 @@ function SeriesDistCard({ s, allPicks, participants }) {
               {legend.map((l, i) => {
                 let prob = null
                 if (s.result_winner) {
-                  // Graded series — 100% for winning outcome, 0% for all others
-                  const winnerGames = s.result_games
-                  const winnerTeam = s.result_winner
-                  const isWinningOutcome = l.label === `${winnerTeam.split(' ').pop()} in ${winnerGames}`
+                  const isWinningOutcome = l.label === `${s.result_winner.split(' ').pop()} in ${s.result_games}`
                   prob = isWinningOutcome ? '100%' : '0%'
                 } else if (s.series_correct_score) {
-                  // In-progress — normalized probability from series_correct_score
                   const css = s.series_correct_score
                   const gamesMap = { 4: 0, 5: 1, 6: 2, 7: 3 }
                   const labelParts = l.label.split(' in ')
@@ -717,7 +686,7 @@ function SeriesDistCard({ s, allPicks, participants }) {
                     <span style={{ background: tc.bg, color: tc.text, padding: '2px 8px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span>
                     <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 28 }}>in {pick.picked_games}</span>
                     <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, minWidth: 32, textAlign: 'right', color: pts === null ? 'rgba(255,255,255,0.3)' : pts > 0 ? '#6ee87a' : pts < 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
-                      {pts === null ? '—' : pts > 0 ? `+${pts}` : pts}
+                      {pts === null ? '—' : pts}
                     </span>
                   </>
                 ) : (
@@ -937,7 +906,7 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
     ctx.textAlign = 'right'
     ;[0, 0.25, 0.5, 0.75, 1].forEach(t => {
       const v = Math.round(minV + (1-t) * range)
-      ctx.fillText((v >= 0 ? '+' : '') + v, PAD.left - 6, PAD.top + t * chartH + 4)
+      ctx.fillText(v, PAD.left - 6, PAD.top + t * chartH + 4)
     })
 
     ctx.textAlign = 'center'
@@ -1012,41 +981,6 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
   const [expandedId, setExpandedId] = useState(null)
 
   const allSeriesFlat = [...(series.NHL || []), ...(series.NBA || [])]
-  console.log('Stars series:', JSON.stringify(allSeriesFlat.find(s => s.home_team === 'Dallas Stars')))
-const projDebug = computeProjected(participants, allPicks, allSeriesFlat)
-const meDebug = projDebug.find(p => p.id === currentUser?.id)
-console.log('My projected:', JSON.stringify(meDebug))
-
-// Per-series EV debug
-const myPicks = allPicks.filter(p => p.user_id === currentUser?.id)
-const inProgress = allSeriesFlat.filter(s => s.locked && !s.result_winner)
-inProgress.forEach(s => {
-  const pick = myPicks.find(p => p.series_id === s.id)
-  const ev = pick ? (() => {
-    const css = s.series_correct_score
-    if (!css) return 'NO_ODDS'
-    const outcomes = [
-      { key: 'home_4_0', winner: s.home_team, games: 4 },
-      { key: 'home_4_1', winner: s.home_team, games: 5 },
-      { key: 'home_4_2', winner: s.home_team, games: 6 },
-      { key: 'home_4_3', winner: s.home_team, games: 7 },
-      { key: 'away_4_0', winner: s.away_team, games: 4 },
-      { key: 'away_4_1', winner: s.away_team, games: 5 },
-      { key: 'away_4_2', winner: s.away_team, games: 6 },
-      { key: 'away_4_3', winner: s.away_team, games: 7 },
-    ]
-    const totalProb = outcomes.reduce((sum, o) => sum + (css[o.key] || 0), 0)
-    let ev = 0
-    outcomes.forEach(o => {
-      const prob = (css[o.key] || 0) / totalProb
-      if (prob === 0) return
-      const pts = calcPoints(s.round, pick.picked_winner, o.winner, o.games, pick.picked_games)
-      ev += prob * pts
-    })
-    return Math.round(ev * 100) / 100
-  })() : 'NO_PICK'
-  console.log(`${s.home_team} vs ${s.away_team}: pick=${pick?.picked_winner} in ${pick?.picked_games}, EV=${ev}`)
-})
   const lockedSeries = allSeriesFlat.filter(s => s.locked)
   const remainingPts = calcRemainingPts(allSeriesFlat)
   const projected = computeProjected(participants, allPicks, allSeriesFlat)
@@ -1129,15 +1063,15 @@ inProgress.forEach(s => {
       {isProj && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr 1fr 52px 52px 72px', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            {['#','Name','Pick','Pts','Proj','Lead%'].map((h, i) => (
-              <div key={i} style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: i >= 3 ? 'right' : i === 2 ? 'right' : 'left', paddingRight: i === 2 ? 12 : 0 }}>{h}</div>
-            ))}
+          <div style={{ display: 'flex', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 8 }}>
+            <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>#</div>
+            <div style={{ flex: 1, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Name</div>
+            <div style={{ width: 80, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Proj</div>
+            <div style={{ width: 64, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Lead%</div>
           </div>
           {sorted.map((p, i) => {
             const rank = i + 1
             const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank
-            const current = league === 'nhl' ? p.nhlTotal : league === 'nba' ? p.nbaTotal : p.combined
             const proj = league === 'nhl' ? p.nhlProjected : league === 'nba' ? p.nbaProjected : p.combinedProjected
             const chance = league === 'nhl' ? p.nhlChanceFirst : league === 'nba' ? p.nbaChanceFirst : p.chanceFirst
             const isMe = p.id === currentUser?.id
@@ -1150,22 +1084,22 @@ inProgress.forEach(s => {
               else ev = pick ? calcSeriesEVFromOdds(pick, s) : -4
               return { s, pick, pts, ev }
             })
-            const gridRow = { display: 'grid', gridTemplateColumns: '28px 1fr 1fr 52px 52px 72px', alignItems: 'center', padding: '10px 12px', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)', background: isExpanded ? 'rgba(249,115,22,0.06)' : isMe ? 'rgba(249,115,22,0.04)' : 'transparent', cursor: 'pointer' }
             return (
               <div key={p.id}>
-                <div style={gridRow} onClick={() => setExpandedId(isExpanded ? null : p.id)}>
-                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)' }}>{medal}</div>
-                  <div>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)', background: isExpanded ? 'rgba(249,115,22,0.06)' : isMe ? 'rgba(249,115,22,0.04)' : 'transparent', cursor: 'pointer' }}
+                  onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                >
+                  <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)', flexShrink: 0 }}>{medal}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: isExpanded ? '#f97316' : isMe ? '#f97316' : '#e8eaf0' }}>
                       {p.full_name}
                       {isMe && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
                     </div>
                     <div style={{ fontSize: 10, color: isExpanded ? '#f97316' : 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>{isExpanded ? 'HIDE ▲' : 'PICKS ▼'}</div>
                   </div>
-                  <div></div>
-                  <div style={{ textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: current >= 0 ? '#6ee87a' : '#f87171' }}>{current}</div>
-                  <div style={{ textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj >= 0 ? '#6ee87a' : '#f87171' }}>{proj}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                  <div style={{ width: 80, textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj >= 0 ? '#6ee87a' : '#f87171', flexShrink: 0 }}>{proj}</div>
+                  <div style={{ width: 64, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexShrink: 0 }}>
                     <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
                     </div>
@@ -1182,9 +1116,9 @@ inProgress.forEach(s => {
                       const valColor = displayVal === null ? 'rgba(255,255,255,0.3)' : displayVal > 0 ? '#6ee87a' : displayVal < 0 ? '#f87171' : 'rgba(255,255,255,0.4)'
                       const valDisplay = displayVal === null ? '—' : Math.round(displayVal * 10) / 10
                       return (
-                        <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 1fr 52px 52px 72px', alignItems: 'center', padding: '7px 12px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                          <div></div>
-                          <div>
+                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.04)', gap: 8 }}>
+                          {/* Series info — left */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
                             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
                               {s.league} R{s.round}
@@ -1192,24 +1126,18 @@ inProgress.forEach(s => {
                               {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
                             </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, paddingRight: 12 }}>
+                          {/* Pick — center */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
                             {pick
-                              ? <><span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span><span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 28 }}>in {pick.picked_games}</span></>
+                              ? <><span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span><span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>in {pick.picked_games}</span></>
                               : <span style={{ fontSize: 11, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 7px', background: 'rgba(248,113,113,0.1)', borderRadius: 4 }}>NO PICK</span>
                             }
                           </div>
-                          {/* Pts col — graded only */}
-                          <div style={{ textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: valColor }}>
-                            {!isEV ? valDisplay : ''}
+                          {/* Score — right */}
+                          <div style={{ textAlign: 'right', minWidth: 44, flexShrink: 0 }}>
+                            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: valColor }}>{valDisplay}</div>
+                            {isEV && <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>EV</div>}
                           </div>
-                          {/* Proj col — in-progress only */}
-                          <div style={{ textAlign: 'right' }}>
-                            {isEV && <>
-                              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: valColor }}>{valDisplay}</div>
-                              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5, textAlign: 'right' }}>EV</div>
-                            </>}
-                          </div>
-                          <div></div>
                         </div>
                       )
                     })}
@@ -1243,12 +1171,14 @@ inProgress.forEach(s => {
                 const isExpanded = expandedId === p.id
                 const isMe = p.id === currentUser?.id
                 const score = league === 'nhl' ? p.nhlTotal : league === 'nba' ? p.nbaTotal : p.combined
-                const playerPicks = lockedSeries.map(s => {
-                  const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
-                  let pts = null
-                  if (pick && s.result_winner) pts = calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
-                  return { s, pick, pts }
-                })
+                const playerPicks = lockedSeries
+                  .filter(s => league === 'combined' || s.league === league.toUpperCase())
+                  .map(s => {
+                    const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
+                    let pts = null
+                    if (pick && s.result_winner) pts = calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
+                    return { s, pick, pts }
+                  })
                 return (
                   <>
                     <tr key={p.id} onClick={() => setExpandedId(isExpanded ? null : p.id)}
@@ -1322,7 +1252,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
   const leagues = ['NHL', 'NBA']
   const paidCount = participants.filter(p => p.paid).length
 
-  // Find most recent odds update across all series
   const lastOddsUpdate = allSeries
     .filter(s => s.odds_updated_at)
     .sort((a, b) => new Date(b.odds_updated_at) - new Date(a.odds_updated_at))[0]?.odds_updated_at
@@ -1365,7 +1294,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
   async function saveOdds(seriesId) {
     const odds = oddsInputs[seriesId] || {}
     const score = scoreInputs[seriesId] || {}
-
     const correctScore = {}
     if (odds.h40) correctScore.home_4_0 = parseFloat(odds.h40)
     if (odds.h41) correctScore.home_4_1 = parseFloat(odds.h41)
@@ -1375,16 +1303,13 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
     if (odds.a41) correctScore.away_4_1 = parseFloat(odds.a41)
     if (odds.a42) correctScore.away_4_2 = parseFloat(odds.a42)
     if (odds.a43) correctScore.away_4_3 = parseFloat(odds.a43)
-
     const seriesScore = {
       homeWins: parseInt(score.homeWins || 0),
       awayWins: parseInt(score.awayWins || 0),
     }
-
     await updateSeriesOdds(seriesId, correctScore, seriesScore)
   }
 
-  // Convert American odds to implied probability
   function americanToProb(american) {
     const n = parseFloat(american)
     if (isNaN(n)) return null
@@ -1485,7 +1410,7 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
             </div>
           )}
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 14, lineHeight: 1.6 }}>
-            Enter DraftKings Series Correct Score American odds for each active series. Enter the current series score. Leave fields blank for impossible outcomes (e.g. home_4_0 when series is 2-1).
+            Enter DraftKings Series Correct Score American odds for each active series. Leave fields blank for impossible outcomes.
           </div>
           {allSeries.filter(s => s.locked && !s.result_winner).map(s => {
             const css = s.series_correct_score || {}
@@ -1501,8 +1426,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                   {s.league} · Round {s.round}
                   {s.odds_updated_at && <span style={{ marginLeft: 8, color: '#f97316' }}>· Updated {new Date(s.odds_updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })}</span>}
                 </div>
-
-                {/* Series Score */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 80 }}>Series Score:</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1517,8 +1440,6 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                     <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{s.away_team.split(' ').pop()}</span>
                   </div>
                 </div>
-
-                {/* Correct Score Odds */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                   {[
                     { key: 'h40', label: `${s.home_team.split(' ').pop()} 4-0`, existing: css.home_4_0 },
@@ -1535,10 +1456,10 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                       <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', minWidth: 72 }}>{field.label}</span>
                         <input
-                          type="text" placeholder={field.existing ? `${field.existing > 0 ? '+' : ''}${Math.round(field.existing > 1 ? field.existing : (field.existing > 0 ? (1/field.existing - 1) * 100 : -100))}` : 'e.g. +230'}
+                          type="text" placeholder="e.g. +230"
                           onChange={e => {
-                            const prob = americanToProb(e.target.value)
-                            if (prob !== null) setOddsField(s.id, field.key, prob)
+                            const p = americanToProb(e.target.value)
+                            if (p !== null) setOddsField(s.id, field.key, p)
                           }}
                           style={{ ...inputStyle, flex: 1 }}
                         />
