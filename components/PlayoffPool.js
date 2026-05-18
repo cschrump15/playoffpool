@@ -281,7 +281,8 @@ export default function PlayoffPool() {
 
   async function loadParticipants() {
     const { data: users } = await supabase.from('users').select('*')
-    const { data: picks } = await supabase.from('picks').select('*').range(0, 9999)
+    const { data: picks, error: picksError } = await supabase.from('picks').select('*').range(0, 9999)
+console.log('Total picks loaded:', picks?.length, 'Error:', picksError)
     const { data: allSeries } = await supabase.from('series').select('*')
     if (users && picks && allSeries) {
       setAllPicks(picks)
