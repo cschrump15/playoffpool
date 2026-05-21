@@ -469,10 +469,14 @@ function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPic
   const [league, setLeague] = useState('NHL')
   const allSeries = series[league]
   const rounds = [...new Set(allSeries.map(s => s.round))].sort((a,b) => b-a)
-  const maxRound = Math.max(...rounds, 1)
+  const maxRound = rounds[0] || 1
   const [openRounds, setOpenRounds] = useState({ [`${league}${maxRound}`]: true })
 
-  useEffect(() => { setOpenRounds({ [`${league}${maxRound}`]: true }) }, [league])
+  useEffect(() => {
+    const r = [...new Set(series[league].map(s => s.round))].sort((a,b) => b-a)
+    const max = r[0] || 1
+    setOpenRounds({ [`${league}${max}`]: true })
+  }, [league])
 
   function toggleRound(key) { setOpenRounds(prev => ({ ...prev, [key]: !prev[key] })) }
   function setPick(seriesId, field, val) {
