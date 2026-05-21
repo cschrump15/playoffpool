@@ -1150,14 +1150,14 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
             <div style={{ display: 'flex', alignItems: 'center', padding: '3px 12px 9px', gap: 6 }}>
               <div style={{ width: 26, flexShrink: 0 }}></div>
               {activeLgSeries.map((s, si) => (
-                <React.Fragment key={s.id}>
-                  {si > 0 && <div style={{ width: 0.5, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0, margin: '0 4px' }} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
-                    <PickCell userId={p.id} s={s} />
-                  </div>
-                </React.Fragment>
-              ))}
+                    <Fragment key={s.id}>
+                      {si > 0 && <div style={{ width: 0.5, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0, margin: '0 4px' }} />}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                        <PickCell userId={p.id} s={s} />
+                      </div>
+                    </Fragment>
+                  ))}
             </div>
           </div>
         )
