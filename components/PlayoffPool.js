@@ -281,8 +281,7 @@ export default function PlayoffPool() {
 
   async function loadParticipants() {
     const { data: users } = await supabase.from('users').select('*')
-    const { data: picks, error: picksError } = await supabase.from('picks').select('*').limit(5000)
-console.log('Total picks loaded:', picks?.length, 'Error:', picksError)
+    const { data: picks } = await supabase.from('picks').select('*')
     const { data: allSeries } = await supabase.from('series').select('*')
     if (users && picks && allSeries) {
       setAllPicks(picks)
@@ -469,7 +468,7 @@ function LoginScreen({ onLogin, onRegister, loading }) {
 function PicksPage({ series, userPicks, pendingPicks, setPendingPicks, submitPick }) {
   const [league, setLeague] = useState('NHL')
   const allSeries = series[league]
-  const rounds = [...new Set(allSeries.map(s => s.round))].sort((a,b) => a-b)
+  const rounds = [...new Set(allSeries.map(s => s.round))].sort((a,b) => b-a) // reversed
   const maxRound = Math.max(...rounds, 1)
   const [openRounds, setOpenRounds] = useState({ [`${league}${maxRound}`]: true })
 
@@ -636,12 +635,9 @@ function SeriesDistCard({ s, allPicks, participants }) {
       </button>
       {open && (
         <div style={{ padding: '0 14px 14px' }}>
-          {/* Donut centered */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
             <DonutChart slices={slices} size={180} />
           </div>
-
-          {/* Distribution table */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0 12px', marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)' }}>Outcome</div>
@@ -718,10 +714,11 @@ function SeriesDistCard({ s, allPicks, participants }) {
 function DistributionsPage({ series, allPicks, participants }) {
   const [league, setLeague] = useState('NHL')
   const allSeries = series[league]
-  const rounds = [...new Set(allSeries.map(s => s.round))].sort((a,b) => a-b)
-  const [openRounds, setOpenRounds] = useState({ [`${league}1`]: true })
+  const rounds = [...new Set(allSeries.map(s => s.round))].sort((a,b) => b-a) // reversed
+  const maxRound = Math.max(...rounds, 1)
+  const [openRounds, setOpenRounds] = useState({ [`${league}${maxRound}`]: true })
 
-  useEffect(() => { setOpenRounds({ [`${league}1`]: true }) }, [league])
+  useEffect(() => { setOpenRounds({ [`${league}${maxRound}`]: true }) }, [league])
   function toggleRound(key) { setOpenRounds(prev => ({ ...prev, [key]: !prev[key] })) }
 
   return (
@@ -897,7 +894,6 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
     function toY(v) { return PAD.top + chartH - ((v - minV) / range) * chartH }
 
     ctx.clearRect(0, 0, W, H)
-
     ctx.strokeStyle = 'rgba(255,255,255,0.06)'
     ctx.lineWidth = 1
     ;[0, 0.25, 0.5, 0.75, 1].forEach(t => {
@@ -987,9 +983,206 @@ function CumulativeChart({ participants, allPicks, allSeries, league, currentUse
   )
 }
 
+// Crunch Time component
+function CrunchTimePage({ participants, allPicks, series, currentUser, league }) {
+  const allSeriesFlat = [...(series.NHL || []), ...(series.NBA || [])]
+
+  // Get active (locked, ungraded) series for the relevant league(s)
+  const getActiveSeries = (lg) => allSeriesFlat.filter(s =>
+    s.league === lg && s.locked && !s.result_winner
+  ).sort((a, b) => a.round - b.round || new Date(a.game1_time) - new Date(b.game1_time))
+
+  const nhlActive = getActiveSeries('NHL')
+  const nbaActive = getActiveSeries('NBA')
+
+  const activeSeries = league === 'combined'
+    ? { NHL: nhlActive, NBA: nbaActive }
+    : { [league]: league === 'NHL' ? nhlActive : nbaActive }
+
+  // Compute scores and projected
+  const scored = participants.map(u => {
+    let currentPts = 0
+    let projPts = 0
+
+    // Current pts from all graded series in relevant league(s)
+    allSeriesFlat.forEach(s => {
+      if (!s.result_winner) return
+      if (league !== 'combined' && s.league !== league) return
+      const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id)
+      const pts = pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
+      currentPts += pts
+    })
+
+    // Projected = current + EV from active series
+    projPts = currentPts
+    allSeriesFlat.forEach(s => {
+      if (s.result_winner || !s.locked) return
+      if (league !== 'combined' && s.league !== league) return
+      const pick = allPicks.find(p => p.user_id === u.id && p.series_id === s.id) || null
+      projPts += calcSeriesEVFromOdds(pick, s)
+    })
+
+    return {
+      ...u,
+      currentPts,
+      projPts: Math.round(projPts * 10) / 10,
+    }
+  }).sort((a, b) => b.currentPts - a.currentPts)
+
+  // Top 15 + ties
+  const cutoff = scored.length >= 15 ? scored[14].currentPts : -Infinity
+  const displayed = scored.filter(p => p.currentPts >= cutoff)
+
+  const ROUND_NAMES = { 1: 'R1', 2: 'R2', 3: 'CF', 4: 'FIN' }
+
+  function PickCell({ userId, s }) {
+    const pick = allPicks.find(p => p.user_id === userId && p.series_id === s.id)
+    const ev = pick ? calcSeriesEVFromOdds(pick, s) : -4
+    const evRounded = Math.round(ev * 10) / 10
+    const evColor = ev > 0 ? '#6ee87a' : ev < 0 ? '#f87171' : 'rgba(255,255,255,0.4)'
+    if (!pick) return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 10, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '1px 5px', background: 'rgba(248,113,113,0.1)', borderRadius: 3 }}>NO PICK</span>
+        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: '#f87171', minWidth: 24, textAlign: 'right' }}>-4</span>
+      </div>
+    )
+    const tc = TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+        <span style={{ background: tc.bg, color: tc.text, padding: '1px 5px', borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>{pick.picked_winner.split(' ').pop()}</span>
+        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>in {pick.picked_games}</span>
+        <div style={{ textAlign: 'right', minWidth: 28 }}>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: evColor }}>{evRounded}</div>
+          <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', letterSpacing: 0.5 }}>EV</div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderTable = (lg, activeLgSeries) => (
+    <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden', marginBottom: league === 'combined' ? 0 : 0 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 4 }}>
+        <div style={{ width: 24, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>#</div>
+        <div style={{ flex: 1, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Name</div>
+        <div style={{ width: 32, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Pts</div>
+        {activeLgSeries.map((s, i) => (
+          <div key={s.id} style={{ width: 100, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>
+            Pick {i + 1} · {s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}
+          </div>
+        ))}
+        <div style={{ width: 36, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Proj</div>
+      </div>
+
+      {displayed.map((p, i) => {
+        const rank = i + 1
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank
+        const isMe = p.id === currentUser?.id
+
+        // For combined, recalc per-league current pts
+        let displayPts = p.currentPts
+        if (league === 'combined') {
+          let lgPts = 0
+          allSeriesFlat.forEach(s => {
+            if (!s.result_winner || s.league !== lg) return
+            const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
+            lgPts += pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
+          })
+          displayPts = lgPts
+        }
+
+        // Projected for this league
+        let lgProj = displayPts
+        activeLgSeries.forEach(s => {
+          const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id) || null
+          lgProj += calcSeriesEVFromOdds(pick, s)
+        })
+        lgProj = Math.round(lgProj * 10) / 10
+
+        return (
+          <div key={p.id} style={{ display: 'flex', alignItems: 'center', padding: '9px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', background: isMe ? 'rgba(249,115,22,0.04)' : 'transparent', gap: 4 }}>
+            <div style={{ width: 24, fontFamily: "'Barlow Condensed', sans-serif", fontSize: rank <= 3 ? 16 : 12, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)', flexShrink: 0 }}>{medal}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: isMe ? '#f97316' : '#e8eaf0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {p.full_name}
+                {isMe && <span style={{ marginLeft: 4, fontSize: 8, padding: '1px 4px', borderRadius: 2, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
+              </div>
+            </div>
+            <div style={{ width: 32, textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: displayPts >= 0 ? '#6ee87a' : '#f87171', flexShrink: 0 }}>{displayPts}</div>
+            {activeLgSeries.map(s => (
+              <div key={s.id} style={{ width: 100, flexShrink: 0 }}>
+                <PickCell userId={p.id} s={s} />
+              </div>
+            ))}
+            <div style={{ width: 36, textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: lgProj >= 0 ? '#6ee87a' : '#f87171', flexShrink: 0 }}>{lgProj}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  if (league === 'combined') {
+    return (
+      <div>
+        {displayed.map((p, i) => {
+          const rank = i + 1
+          const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank
+          const isMe = p.id === currentUser?.id
+          return (
+            <div key={p.id} style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: `1px solid ${isMe ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.07)'}`, marginBottom: 8, overflow: 'hidden' }}>
+              {/* Player header */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: isMe ? 'rgba(249,115,22,0.04)' : 'rgba(255,255,255,0.01)', gap: 8 }}>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: rank <= 3 ? 18 : 13, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)', flexShrink: 0 }}>{medal}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: isMe ? '#f97316' : '#e8eaf0' }}>
+                    {p.full_name}
+                    {isMe && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)' }}>Combined</div>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 16, fontWeight: 700, color: p.currentPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.currentPts} <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>→ {p.projPts}</span></div>
+                </div>
+              </div>
+              {/* NHL row */}
+              {nhlActive.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', gap: 4 }}>
+                  <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, color: '#f97316', letterSpacing: 1 }}>NHL</div>
+                  {nhlActive.map(s => (
+                    <div key={s.id} style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                      <PickCell userId={p.id} s={s} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* NBA row */}
+              {nbaActive.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', gap: 4 }}>
+                  <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, color: '#60a5fa', letterSpacing: 1 }}>NBA</div>
+                  {nbaActive.map(s => (
+                    <div key={s.id} style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                      <PickCell userId={p.id} s={s} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const activeLgSeries = league === 'NHL' ? nhlActive : nbaActive
+  return renderTable(league, activeLgSeries)
+}
+
 function StandingsPage({ participants, allPicks, series, currentUser }) {
   const [view, setView] = useState('live-combined')
   const [expandedId, setExpandedId] = useState(null)
+  const [expandedRounds, setExpandedRounds] = useState({})
 
   const allSeriesFlat = [...(series.NHL || []), ...(series.NBA || [])]
   const lockedSeries = allSeriesFlat.filter(s => s.locked)
@@ -1010,6 +1203,7 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
 
   const isChart = view.startsWith('chart-')
   const isProj = view.startsWith('proj-')
+  const isCrunch = view.startsWith('crunch-')
   const league = view.endsWith('nhl') ? 'nhl' : view.endsWith('nba') ? 'nba' : 'combined'
 
   const getSortKey = () => {
@@ -1022,27 +1216,45 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
 
   const TABS = [
     [
-      { key: 'live-combined', label: 'Live Standings (ALL)' },
-      { key: 'live-nhl',      label: 'Live Standings (NHL)' },
-      { key: 'live-nba',      label: 'Live Standings (NBA)' },
+      { key: 'live-combined', label: 'Live (ALL)' },
+      { key: 'live-nhl',      label: 'Live (NHL)' },
+      { key: 'live-nba',      label: 'Live (NBA)' },
     ],
     [
-      { key: 'proj-combined', label: 'Projected Standings (ALL)' },
-      { key: 'proj-nhl',      label: 'Projected Standings (NHL)' },
-      { key: 'proj-nba',      label: 'Projected Standings (NBA)' },
+      { key: 'proj-combined', label: 'Proj (ALL)' },
+      { key: 'proj-nhl',      label: 'Proj (NHL)' },
+      { key: 'proj-nba',      label: 'Proj (NBA)' },
     ],
     [
-      { key: 'chart-combined', label: 'Standings Chart (ALL)' },
-      { key: 'chart-nhl',      label: 'Standings Chart (NHL)' },
-      { key: 'chart-nba',      label: 'Standings Chart (NBA)' },
+      { key: 'chart-combined', label: 'Chart (ALL)' },
+      { key: 'chart-nhl',      label: 'Chart (NHL)' },
+      { key: 'chart-nba',      label: 'Chart (NBA)' },
+    ],
+    [
+      { key: 'crunch-combined', label: '🔥 Crunch (ALL)' },
+      { key: 'crunch-nhl',      label: '🔥 Crunch (NHL)' },
+      { key: 'crunch-nba',      label: '🔥 Crunch (NBA)' },
     ],
   ]
+
+  function togglePlayerRound(playerId, round) {
+    const key = `${playerId}-${round}`
+    setExpandedRounds(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  function isRoundExpanded(playerId, round, maxRound) {
+    const key = `${playerId}-${round}`
+    if (key in expandedRounds) return expandedRounds[key]
+    return round === maxRound // default open for current round
+  }
+
+  const ROUND_NAMES = { 1: 'Round 1', 2: 'Round 2', 3: 'Conf. Finals', 4: 'Finals' }
 
   return (
     <div className="page">
       <div className="page-title">Standings</div>
       <div className="page-sub">
-        {isChart ? 'Cumulative score after each graded series.' : isProj ? 'Round projected score + chance of leading.' : 'Click a name to expand their picks.'}
+        {isChart ? 'Cumulative score after each graded series.' : isProj ? 'Round projected score + chance of leading.' : isCrunch ? 'Top 15 · active picks + EV.' : 'Click a name to expand their picks.'}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginBottom: 16 }}>
@@ -1061,6 +1273,16 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
         )))}
       </div>
 
+      {isCrunch && (
+        <CrunchTimePage
+          participants={participants}
+          allPicks={allPicks}
+          series={series}
+          currentUser={currentUser}
+          league={league === 'nhl' ? 'NHL' : league === 'nba' ? 'NBA' : 'combined'}
+        />
+      )}
+
       {isChart && (
         <CumulativeChart
           participants={participants}
@@ -1073,7 +1295,6 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
 
       {isProj && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-          {/* Header */}
           <div style={{ display: 'flex', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 8 }}>
             <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>#</div>
             <div style={{ flex: 1, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Name</div>
@@ -1087,19 +1308,16 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
             const chance = league === 'nhl' ? p.nhlChanceFirst : league === 'nba' ? p.nbaChanceFirst : p.chanceFirst
             const isMe = p.id === currentUser?.id
             const isExpanded = expandedId === p.id
+
             const playerLockedSeries = lockedSeries.filter(s => league === 'combined' || s.league === league.toUpperCase())
-            const playerPicks = playerLockedSeries.map(s => {
-              const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
-              let pts = null, ev = null
-              if (s.result_winner) pts = pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
-              else ev = pick ? calcSeriesEVFromOdds(pick, s) : -4
-              return { s, pick, pts, ev }
-            })
+            const rounds = [...new Set(playerLockedSeries.map(s => s.round))].sort((a,b) => b-a)
+            const maxRound = Math.max(...rounds, 1)
+
             return (
               <div key={p.id}>
                 <div
                   style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)', background: isExpanded ? 'rgba(249,115,22,0.06)' : isMe ? 'rgba(249,115,22,0.04)' : 'transparent', cursor: 'pointer' }}
-                  onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                  onClick={() => { setExpandedId(isExpanded ? null : p.id); setExpandedRounds({}) }}
                 >
                   <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)', flexShrink: 0 }}>{medal}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -1119,36 +1337,47 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                 </div>
                 {isExpanded && (
                   <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'rgba(249,115,22,0.03)' }}>
-                    {playerPicks.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', padding: '8px 12px' }}>No locked series yet.</div>}
-                    {playerPicks.map(({ s, pick, pts, ev }) => {
-                      const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
-                      const isEV = !s.result_winner
-                      const displayVal = isEV ? ev : pts
-                      const valColor = displayVal === null ? 'rgba(255,255,255,0.3)' : displayVal > 0 ? '#6ee87a' : displayVal < 0 ? '#f87171' : 'rgba(255,255,255,0.4)'
-                      const valDisplay = displayVal === null ? '—' : Math.round(displayVal * 10) / 10
+                    {rounds.map(r => {
+                      const rOpen = isRoundExpanded(p.id, r, maxRound)
+                      const roundSeries = playerLockedSeries.filter(s => s.round === r)
                       return (
-                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.04)', gap: 8 }}>
-                          {/* Series info — left */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
-                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
-                              {s.league} R{s.round}
-                              {s.result_winner && <span style={{ color: '#6ee87a', marginLeft: 5 }}>· {s.result_winner.split(' ').pop()} in {s.result_games}</span>}
-                              {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
-                            </div>
+                        <div key={r}>
+                          <div onClick={() => togglePlayerRound(p.id, r)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.02)' }}>
+                            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: rOpen ? '#f97316' : 'rgba(255,255,255,0.35)' }}>{ROUND_NAMES[r]}</span>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, transform: rOpen ? 'rotate(180deg)' : 'rotate(0deg)', display: 'inline-block', transition: 'transform 0.2s' }}>▾</span>
                           </div>
-                          {/* Pick — center */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                            {pick
-                              ? <><span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span><span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>in {pick.picked_games}</span></>
-                              : <span style={{ fontSize: 11, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 7px', background: 'rgba(248,113,113,0.1)', borderRadius: 4 }}>NO PICK</span>
-                            }
-                          </div>
-                          {/* Score — right */}
-                          <div style={{ textAlign: 'right', minWidth: 44, flexShrink: 0 }}>
-                            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: valColor }}>{valDisplay}</div>
-                            {isEV && <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>EV</div>}
-                          </div>
+                          {rOpen && roundSeries.map(s => {
+                            const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
+                            const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
+                            const isEV = !s.result_winner
+                            const displayVal = isEV
+                              ? (pick ? calcSeriesEVFromOdds(pick, s) : -4)
+                              : (pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4)
+                            const valColor = displayVal > 0 ? '#6ee87a' : displayVal < 0 ? '#f87171' : 'rgba(255,255,255,0.4)'
+                            const valDisplay = Math.round(displayVal * 10) / 10
+                            return (
+                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', borderTop: '1px solid rgba(255,255,255,0.03)', gap: 8 }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                                    {s.league} R{s.round}
+                                    {s.result_winner && <span style={{ color: '#6ee87a', marginLeft: 5 }}>· {s.result_winner.split(' ').pop()} in {s.result_games}</span>}
+                                    {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                                  {pick
+                                    ? <><span style={{ background: tc.bg, color: tc.text, padding: '2px 6px', borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span><span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>in {pick.picked_games}</span></>
+                                    : <span style={{ fontSize: 10, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 6px', background: 'rgba(248,113,113,0.1)', borderRadius: 3 }}>NO PICK</span>
+                                  }
+                                </div>
+                                <div style={{ textAlign: 'right', minWidth: 40, flexShrink: 0 }}>
+                                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: valColor }}>{valDisplay}</div>
+                                  {isEV && <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>EV</div>}
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       )
                     })}
@@ -1160,7 +1389,7 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
         </div>
       )}
 
-      {!isChart && !isProj && (
+      {!isChart && !isProj && !isCrunch && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -1182,17 +1411,14 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                 const isExpanded = expandedId === p.id
                 const isMe = p.id === currentUser?.id
                 const score = league === 'nhl' ? p.nhlTotal : league === 'nba' ? p.nbaTotal : p.combined
-                const playerPicks = lockedSeries
-                  .filter(s => league === 'combined' || s.league === league.toUpperCase())
-                  .map(s => {
-                    const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
-                    let pts = null
-                    if (pick && s.result_winner) pts = calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games)
-                    return { s, pick, pts }
-                  })
+
+                const playerLockedSeries = lockedSeries.filter(s => league === 'combined' || s.league === league.toUpperCase())
+                const rounds = [...new Set(playerLockedSeries.map(s => s.round))].sort((a,b) => b-a)
+                const maxRound = Math.max(...rounds, 1)
+
                 return (
                   <>
-                    <tr key={p.id} onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                    <tr key={p.id} onClick={() => { setExpandedId(isExpanded ? null : p.id); setExpandedRounds({}) }}
                       style={{ cursor: 'pointer', background: isExpanded ? 'rgba(249,115,22,0.06)' : isPayout ? 'rgba(249,115,22,0.03)' : isMe ? 'rgba(249,115,22,0.02)' : 'transparent', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)' }}>
                       <td style={{ padding: '11px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)' }}>{medal}</td>
                       <td style={{ padding: '11px 12px' }}>
@@ -1211,31 +1437,44 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                     </tr>
                     {isExpanded && (
                       <tr key={`${p.id}-exp`}>
-                        <td colSpan={league === 'combined' ? 5 : 3} style={{ padding: '0 10px 12px', background: 'rgba(249,115,22,0.03)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          {playerPicks.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', padding: '8px 0' }}>No locked series yet.</div>}
-                          {playerPicks.map(({ s, pick, pts }) => {
-                            const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
+                        <td colSpan={league === 'combined' ? 5 : 3} style={{ padding: '0 0 8px', background: 'rgba(249,115,22,0.03)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          {rounds.map(r => {
+                            const rOpen = isRoundExpanded(p.id, r, maxRound)
+                            const roundSeries = playerLockedSeries.filter(s => s.round === r)
                             return (
-                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 7, gap: 8, marginTop: 5, border: '1px solid rgba(255,255,255,0.04)' }}>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
-                                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
-                                    {s.league} R{s.round}
-                                    {s.result_winner && <span style={{ color: '#6ee87a', marginLeft: 5 }}>· {s.result_winner.split(' ').pop()} in {s.result_games}</span>}
-                                    {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
-                                  </div>
+                              <div key={r}>
+                                <div onClick={() => togglePlayerRound(p.id, r)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.02)' }}>
+                                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: rOpen ? '#f97316' : 'rgba(255,255,255,0.35)' }}>{ROUND_NAMES[r]}</span>
+                                  <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, transform: rOpen ? 'rotate(180deg)' : 'rotate(0deg)', display: 'inline-block', transition: 'transform 0.2s' }}>▾</span>
                                 </div>
-                                {pick ? (
-                                  <>
-                                    <span style={{ background: tc.bg, color: tc.text, padding: '2px 7px', borderRadius: 4, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span>
-                                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 28 }}>in {pick.picked_games}</span>
-                                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, minWidth: 34, textAlign: 'right', color: pts === null ? 'rgba(255,255,255,0.3)' : pts > 0 ? '#6ee87a' : pts < 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
-                                      {pts === null ? '—' : pts}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <span style={{ fontSize: 11, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 7px', background: 'rgba(248,113,113,0.1)', borderRadius: 4 }}>NO PICK −4</span>
-                                )}
+                                {rOpen && roundSeries.map(s => {
+                                  const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
+                                  const tc = pick ? (TEAM_COLORS[pick.picked_winner] || { bg: '#444', text: '#fff' }) : null
+                                  const pts = pick && s.result_winner ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : null
+                                  return (
+                                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', borderTop: '1px solid rgba(255,255,255,0.03)', gap: 8 }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: '#e8eaf0' }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                                          {s.league} R{s.round}
+                                          {s.result_winner && <span style={{ color: '#6ee87a', marginLeft: 5 }}>· {s.result_winner.split(' ').pop()} in {s.result_games}</span>}
+                                          {!s.result_winner && <span style={{ color: '#f97316', marginLeft: 5 }}>· In progress</span>}
+                                        </div>
+                                      </div>
+                                      {pick ? (
+                                        <>
+                                          <span style={{ background: tc.bg, color: tc.text, padding: '2px 6px', borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700 }}>{pick.picked_winner.split(' ').pop()}</span>
+                                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>in {pick.picked_games}</span>
+                                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, minWidth: 32, textAlign: 'right', color: pts === null ? 'rgba(255,255,255,0.3)' : pts > 0 ? '#6ee87a' : pts < 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
+                                            {pts === null ? '—' : pts}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span style={{ fontSize: 10, color: '#f87171', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, padding: '2px 6px', background: 'rgba(248,113,113,0.1)', borderRadius: 3 }}>NO PICK −4</span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             )
                           })}
