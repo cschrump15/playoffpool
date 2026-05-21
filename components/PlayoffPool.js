@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -1085,13 +1085,13 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
                   <div style={{ width: 26, flexShrink: 0 }}></div>
                   <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, color: '#f97316', letterSpacing: 1, width: 28, flexShrink: 0 }}>NHL</span>
                   {nhlActive.map((s, si) => (
-                    <React.Fragment key={s.id}>
+                    <Fragment key={s.id}>
                       {si > 0 && <div style={{ width: 0.5, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0, margin: '0 4px' }} />}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
                         <PickCell userId={p.id} s={s} />
                       </div>
-                    </React.Fragment>
+                    </Fragment>
                   ))}
                 </div>
               )}
@@ -1101,13 +1101,13 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
                   <div style={{ width: 26, flexShrink: 0 }}></div>
                   <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 700, color: '#60a5fa', letterSpacing: 1, width: 28, flexShrink: 0 }}>NBA</span>
                   {nbaActive.map((s, si) => (
-                    <React.Fragment key={s.id}>
+                    <Fragment key={s.id}>
                       {si > 0 && <div style={{ width: 0.5, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0, margin: '0 4px' }} />}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
                         <PickCell userId={p.id} s={s} />
                       </div>
-                    </React.Fragment>
+                    </Fragment>
                   ))}
                 </div>
               )}
