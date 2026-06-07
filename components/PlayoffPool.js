@@ -80,15 +80,15 @@ function calcRemainingPts(allSeries) {
 
 // ─── ENUMERATION WIN % ─────────────────────────────────────────────────────
 function enumerateWinPct(participants, allPicks, allSeriesFlat, leagueFilter) {
-  // Get active series for this league filter
   const activeSeries = allSeriesFlat.filter(s => {
     if (s.result_winner || !s.locked) return false
     if (leagueFilter === 'combined') return true
     return s.league === leagueFilter
   })
 
+  const payoutSlots = leagueFilter === 'combined' ? 3 : 2
+
   if (activeSeries.length === 0) {
-    // No active series — just rank by current score
     const sorted = [...participants].sort((a, b) => {
       const aScore = leagueFilter === 'NHL' ? a.nhlTotal : leagueFilter === 'NBA' ? a.nbaTotal : a.combined
       const bScore = leagueFilter === 'NHL' ? b.nhlTotal : leagueFilter === 'NBA' ? b.nbaTotal : b.combined
@@ -96,11 +96,12 @@ function enumerateWinPct(participants, allPicks, allSeriesFlat, leagueFilter) {
     })
     return participants.map(p => {
       const rank = sorted.findIndex(s => s.id === p.id)
-      return rank === 0 ? 100 : 0
+      const result = new Array(payoutSlots).fill(0)
+      if (rank < payoutSlots) result[rank] = 100
+      return result
     })
   }
 
-  // Build outcome list for each active series
   function getSeriesOutcomes(s) {
     const css = s.series_correct_score
     if (!css) return []
@@ -126,9 +127,8 @@ function enumerateWinPct(participants, allPicks, allSeriesFlat, leagueFilter) {
     outcomes: getSeriesOutcomes(s)
   })).filter(s => s.outcomes.length > 0)
 
-  if (seriesOutcomes.length === 0) return participants.map(() => 0)
+  if (seriesOutcomes.length === 0) return participants.map(() => new Array(payoutSlots).fill(0))
 
-  // Build all combinations via cartesian product
   function cartesian(arrays) {
     return arrays.reduce((acc, arr) => {
       const result = []
@@ -139,18 +139,16 @@ function enumerateWinPct(participants, allPicks, allSeriesFlat, leagueFilter) {
 
   const allCombinations = cartesian(seriesOutcomes.map(s => s.outcomes))
 
-  // Win tallies per participant
-  const winTally = new Array(participants.length).fill(0)
+  // Tallies per participant per payout slot
+  const tallies = participants.map(() => new Array(payoutSlots).fill(0))
 
   for (const combo of allCombinations) {
-    // Joint probability of this scenario
     const prob = combo.reduce((p, outcome) => p * outcome.prob, 1)
 
-    // Score each participant under this scenario
+    // Score each participant
     const scores = participants.map(u => {
       let nhlScore = u.nhlTotal
       let nbaScore = u.nbaTotal
-
       seriesOutcomes.forEach((so, i) => {
         const outcome = combo[i]
         const pick = allPicks.find(pk => pk.user_id === u.id && pk.series_id === so.series.id)
@@ -160,29 +158,37 @@ function enumerateWinPct(participants, allPicks, allSeriesFlat, leagueFilter) {
         if (so.series.league === 'NHL') nhlScore += pts
         else nbaScore += pts
       })
-
-      const total = leagueFilter === 'NHL' ? nhlScore
-                  : leagueFilter === 'NBA' ? nbaScore
-                  : nhlScore + nbaScore
-      return total
+      return leagueFilter === 'NHL' ? nhlScore
+           : leagueFilter === 'NBA' ? nbaScore
+           : nhlScore + nbaScore
     })
 
-    // Find max score
-    const maxScore = Math.max(...scores)
+    // Sort unique scores descending to find rank thresholds
+    const uniqueScores = [...new Set(scores)].sort((a, b) => b - a)
 
-    // Find all winners (ties split equally)
-    const winners = scores.reduce((acc, score, i) => {
-      if (score === maxScore) acc.push(i)
-      return acc
-    }, [])
-
-    const share = prob / winners.length
-    winners.forEach(i => { winTally[i] += share })
+    // Option A: ties share, next rank skips
+    // Track which payout slot we're filling
+    let slotIdx = 0
+    for (const scoreVal of uniqueScores) {
+      if (slotIdx >= payoutSlots) break
+      const tiedIndices = scores.reduce((acc, s, i) => {
+        if (s === scoreVal) acc.push(i)
+        return acc
+      }, [])
+      const tieCount = tiedIndices.length
+      const share = prob / tieCount
+      // Each person at this score level gets share of current slot
+      tiedIndices.forEach(i => { tallies[i][slotIdx] += share })
+      // Skip ahead by tieCount slots (Option A — ties consume slots)
+      slotIdx += tieCount
+    }
   }
 
   // Convert to percentages
-  const total = winTally.reduce((a, b) => a + b, 0)
-  return winTally.map(w => total > 0 ? Math.round((w / total) * 100) : 0)
+  const totals = tallies[0].map((_, slotIdx) => tallies.reduce((sum, t) => sum + t[slotIdx], 0))
+  return tallies.map(t =>
+    t.map((val, slotIdx) => totals[slotIdx] > 0 ? Math.round((val / totals[slotIdx]) * 100) : 0)
+  )
 }
 
 function computeProjected(participants, allPicks, allSeriesFlat) {
@@ -1034,10 +1040,17 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
                     <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: p.projPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.projPts}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 6 }}>
-                    <div style={{ width: 32, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${leadPct}%`, background: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
-                    </div>
-                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 30, textAlign: 'right' }}>{leadPct}%</span>
+                    {(winPctMap[p.id] || []).map((pct, slot) => {
+                      const slotColor = slot === 0 ? '#f97316' : slot === 1 ? '#94a3b8' : '#b87333'
+                      const slotLabel = slot === 0 ? '1st' : slot === 1 ? '2nd' : '3rd'
+                      return (
+                        <div key={slot} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 28 }}>
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: pct >= 10 ? slotColor : 'rgba(255,255,255,0.3)' }}>{pct}%</span>
+                          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>{slotLabel}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
                   </div>
                 </div>
               </div>
@@ -1106,10 +1119,17 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
                   <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: p.projPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.projPts}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 6 }}>
-                  <div style={{ width: 32, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${leadPct}%`, background: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                    {(winPctMap[p.id] || []).map((pct, slot) => {
+                      const slotColor = slot === 0 ? '#f97316' : slot === 1 ? '#94a3b8' : '#b87333'
+                      const slotLabel = slot === 0 ? '1st' : slot === 1 ? '2nd' : '3rd'
+                      return (
+                        <div key={slot} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 28 }}>
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: pct >= 10 ? slotColor : 'rgba(255,255,255,0.3)' }}>{pct}%</span>
+                          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5 }}>{slotLabel}</span>
+                        </div>
+                      )
+                    })}
                   </div>
-                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 30, textAlign: 'right' }}>{leadPct}%</span>
                 </div>
               </div>
             </div>
@@ -1153,9 +1173,13 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
 
   const projectedWithChance = projected.map((p, i) => ({
     ...p,
-    chanceFirst: combinedWinPcts[i],
-    nhlChanceFirst: nhlWinPcts[i],
-    nbaChanceFirst: nbaWinPcts[i],
+    chanceFirst:    combinedWinPcts[i][0],
+    chanceSecond:   combinedWinPcts[i][1],
+    chanceThird:    combinedWinPcts[i][2],
+    nhlChanceFirst:  nhlWinPcts[i][0],
+    nhlChanceSecond: nhlWinPcts[i][1],
+    nbaChanceFirst:  nbaWinPcts[i][0],
+    nbaChanceSecond: nbaWinPcts[i][1],
   }))
 
   const getSortKey = () => {
@@ -1243,7 +1267,9 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
             <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>#</div>
             <div style={{ flex: 1, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Name</div>
             <div style={{ width: 100, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Pts → Proj</div>
-            <div style={{ width: 64, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Lead%</div>
+            <div style={{ width: 120, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>
+              {league === 'combined' ? '1st · 2nd · 3rd' : '1st · 2nd'}
+            </div>
           </div>
           {sorted.map((p, i) => {
             const rank = i + 1
@@ -1281,11 +1307,23 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                       <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: proj >= 0 ? '#6ee87a' : '#f87171' }}>{proj}</span>
                     </div>
                   </div>
-                  <div style={{ width: 64, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5, flexShrink: 0 }}>
-                    <div style={{ width: 32, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
-                    </div>
-                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
+                  <div style={{ width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexShrink: 0 }}>
+                    {league === 'combined' ? (
+                      <>
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: p.chanceFirst >= 20 ? '#f97316' : p.chanceFirst >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.35)', minWidth: 28, textAlign: 'right' }}>{p.chanceFirst}%</span>
+                        <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>·</span>
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: p.chanceSecond >= 20 ? '#94a3b8' : p.chanceSecond >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.35)', minWidth: 28, textAlign: 'right' }}>{p.chanceSecond}%</span>
+                        <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>·</span>
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: p.chanceThird >= 20 ? '#b87333' : p.chanceThird >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.35)', minWidth: 28, textAlign: 'right' }}>{p.chanceThird}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.35)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
+                        <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>·</span>
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: (league === 'nhl' ? p.nhlChanceSecond : p.nbaChanceSecond) >= 20 ? '#94a3b8' : (league === 'nhl' ? p.nhlChanceSecond : p.nbaChanceSecond) >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.35)', minWidth: 28, textAlign: 'right' }}>{league === 'nhl' ? p.nhlChanceSecond : p.nbaChanceSecond}%</span>
+                      </>
+                    )}
+                  </div>
                   </div>
                 </div>
                 {isExpanded && (
