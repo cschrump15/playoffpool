@@ -78,14 +78,111 @@ function calcRemainingPts(allSeries) {
     .reduce((sum, s) => sum + WINNER_PTS[s.round] + GAMES_BONUS[s.round], 0)
 }
 
-function softmaxChance(participants, key, remainingPts) {
-  const minTemp = 2, maxTemp = 20
-  const temp = minTemp + (maxTemp - minTemp) * (remainingPts / TOTAL_POSSIBLE_PTS)
-  const vals = participants.map(p => (p[key] || 0) / temp)
-  const maxV = Math.max(...vals)
-  const exps = vals.map(v => Math.exp(v - maxV))
-  const total = exps.reduce((a, b) => a + b, 0)
-  return exps.map(e => Math.round((e / total) * 100))
+// ─── ENUMERATION WIN % ─────────────────────────────────────────────────────
+function enumerateWinPct(participants, allPicks, allSeriesFlat, leagueFilter) {
+  // Get active series for this league filter
+  const activeSeries = allSeriesFlat.filter(s => {
+    if (s.result_winner || !s.locked) return false
+    if (leagueFilter === 'combined') return true
+    return s.league === leagueFilter
+  })
+
+  if (activeSeries.length === 0) {
+    // No active series — just rank by current score
+    const sorted = [...participants].sort((a, b) => {
+      const aScore = leagueFilter === 'NHL' ? a.nhlTotal : leagueFilter === 'NBA' ? a.nbaTotal : a.combined
+      const bScore = leagueFilter === 'NHL' ? b.nhlTotal : leagueFilter === 'NBA' ? b.nbaTotal : b.combined
+      return bScore - aScore
+    })
+    return participants.map(p => {
+      const rank = sorted.findIndex(s => s.id === p.id)
+      return rank === 0 ? 100 : 0
+    })
+  }
+
+  // Build outcome list for each active series
+  function getSeriesOutcomes(s) {
+    const css = s.series_correct_score
+    if (!css) return []
+    const outcomeKeys = [
+      { key: 'home_4_0', winner: s.home_team, games: 4 },
+      { key: 'home_4_1', winner: s.home_team, games: 5 },
+      { key: 'home_4_2', winner: s.home_team, games: 6 },
+      { key: 'home_4_3', winner: s.home_team, games: 7 },
+      { key: 'away_4_0', winner: s.away_team, games: 4 },
+      { key: 'away_4_1', winner: s.away_team, games: 5 },
+      { key: 'away_4_2', winner: s.away_team, games: 6 },
+      { key: 'away_4_3', winner: s.away_team, games: 7 },
+    ]
+    const total = outcomeKeys.reduce((sum, o) => sum + (css[o.key] || 0), 0)
+    if (total === 0) return []
+    return outcomeKeys
+      .filter(o => (css[o.key] || 0) > 0)
+      .map(o => ({ winner: o.winner, games: o.games, prob: (css[o.key] || 0) / total }))
+  }
+
+  const seriesOutcomes = activeSeries.map(s => ({
+    series: s,
+    outcomes: getSeriesOutcomes(s)
+  })).filter(s => s.outcomes.length > 0)
+
+  if (seriesOutcomes.length === 0) return participants.map(() => 0)
+
+  // Build all combinations via cartesian product
+  function cartesian(arrays) {
+    return arrays.reduce((acc, arr) => {
+      const result = []
+      acc.forEach(a => arr.forEach(b => result.push([...a, b])))
+      return result
+    }, [[]])
+  }
+
+  const allCombinations = cartesian(seriesOutcomes.map(s => s.outcomes))
+
+  // Win tallies per participant
+  const winTally = new Array(participants.length).fill(0)
+
+  for (const combo of allCombinations) {
+    // Joint probability of this scenario
+    const prob = combo.reduce((p, outcome) => p * outcome.prob, 1)
+
+    // Score each participant under this scenario
+    const scores = participants.map(u => {
+      let nhlScore = u.nhlTotal
+      let nbaScore = u.nbaTotal
+
+      seriesOutcomes.forEach((so, i) => {
+        const outcome = combo[i]
+        const pick = allPicks.find(pk => pk.user_id === u.id && pk.series_id === so.series.id)
+        const pts = pick
+          ? calcPoints(so.series.round, pick.picked_winner, outcome.winner, outcome.games, pick.picked_games)
+          : -4
+        if (so.series.league === 'NHL') nhlScore += pts
+        else nbaScore += pts
+      })
+
+      const total = leagueFilter === 'NHL' ? nhlScore
+                  : leagueFilter === 'NBA' ? nbaScore
+                  : nhlScore + nbaScore
+      return total
+    })
+
+    // Find max score
+    const maxScore = Math.max(...scores)
+
+    // Find all winners (ties split equally)
+    const winners = scores.reduce((acc, score, i) => {
+      if (score === maxScore) acc.push(i)
+      return acc
+    }, [])
+
+    const share = prob / winners.length
+    winners.forEach(i => { winTally[i] += share })
+  }
+
+  // Convert to percentages
+  const total = winTally.reduce((a, b) => a + b, 0)
+  return winTally.map(w => total > 0 ? Math.round((w / total) * 100) : 0)
 }
 
 function computeProjected(participants, allPicks, allSeriesFlat) {
@@ -335,18 +432,15 @@ export default function PlayoffPool() {
 
   async function enterResult(seriesId, winner, games) {
     await supabase.from('series').update({
-      result_winner: winner,
-      result_games: games,
-      result_date: new Date().toISOString(),
-      series_correct_score: null,
+      result_winner: winner, result_games: games,
+      result_date: new Date().toISOString(), series_correct_score: null,
     }).eq('id', seriesId)
     loadSeries(); loadParticipants(); showToast('Result saved ✓')
   }
 
   async function updateSeriesOdds(seriesId, correctScore, seriesScore) {
     await supabase.from('series').update({
-      series_correct_score: correctScore,
-      series_score: seriesScore,
+      series_correct_score: correctScore, series_score: seriesScore,
       odds_updated_at: new Date().toISOString(),
     }).eq('id', seriesId)
     loadSeries()
@@ -591,13 +685,11 @@ function SeriesDistCard({ s, allPicks, participants }) {
   const picks = allPicks.filter(p => p.series_id === s.id)
   const totalParticipants = participants.length
   const noPicks = totalParticipants - picks.length
-
   const groups = {}
   picks.forEach(p => {
     const key = `${p.picked_winner}|${p.picked_games}`
     groups[key] = (groups[key] || 0) + 1
   })
-
   const slices = [], legend = []
   ;[s.home_team, s.away_team].forEach(team => {
     const tc = TEAM_COLORS[team] || { bg: '#444', alt: '#888' }
@@ -614,7 +706,6 @@ function SeriesDistCard({ s, allPicks, participants }) {
     slices.push({ label: 'No Pick', count: noPicks, bg: '#374151', border: '#6b7280' })
     legend.push({ label: 'No Pick', count: noPicks, bg: '#374151', border: '#6b7280' })
   }
-
   const homeCount = picks.filter(p => p.picked_winner === s.home_team).length
   const awayCount = picks.filter(p => p.picked_winner === s.away_team).length
   const homeTc = TEAM_COLORS[s.home_team] || { bg: '#888', text: '#fff' }
@@ -719,7 +810,7 @@ function DistributionsPage({ series, allPicks, participants }) {
   const [league, setLeague] = useState('NHL')
   const allSeries = series[league]
   const rounds = [...new Set(allSeries.map(s => s.round))].sort((a,b) => b-a)
-  const maxRound = Math.max(...rounds, 1)
+  const maxRound = rounds[0] || 1
   const [openRounds, setOpenRounds] = useState({ [`${league}${maxRound}`]: true })
 
   useEffect(() => { setOpenRounds({ [`${league}${maxRound}`]: true }) }, [league])
@@ -841,152 +932,6 @@ function ScoringRulesPage({ participants }) {
     </div>
   )
 }
-function CumulativeChart({ participants, allPicks, allSeries, league, currentUserId }) {
-  const [showAll, setShowAll] = useState(false)
-  const canvasRef = useRef(null)
-
-  const leagueSeries = allSeries
-    .filter(s => (league === 'combined' || s.league === league) && s.result_winner)
-    .sort((a, b) => new Date(a.result_date || a.game1_time) - new Date(b.result_date || b.game1_time))
-
-  const sorted = [...participants].sort((a, b) => {
-    let aTotal = 0, bTotal = 0
-    leagueSeries.forEach(s => {
-      const aPick = allPicks.find(p => p.user_id === a.id && p.series_id === s.id)
-      const bPick = allPicks.find(p => p.user_id === b.id && p.series_id === s.id)
-      aTotal += aPick ? calcPoints(s.round, aPick.picked_winner, s.result_winner, s.result_games, aPick.picked_games) : -4
-      bTotal += bPick ? calcPoints(s.round, bPick.picked_winner, s.result_winner, s.result_games, bPick.picked_games) : -4
-    })
-    return bTotal - aTotal
-  })
-
-  const displayed = showAll ? sorted : sorted.slice(0, 10)
-  const COLORS = ['#f97316','#60a5fa','#6ee87a','#f87171','#c4b5fd','#fdba74','#67e8f9','#a3e635','#f9a8d4','#94a3b8']
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || leagueSeries.length === 0) return
-    const ctx = canvas.getContext('2d')
-    const W = canvas.offsetWidth
-    const H = 280
-    canvas.width = W
-    canvas.height = H
-    const PAD = { top: 20, right: 20, bottom: 60, left: 44 }
-    const chartW = W - PAD.left - PAD.right
-    const chartH = H - PAD.top - PAD.bottom
-
-    const allData = displayed.map((p, pi) => {
-      let cum = 0
-      const points = leagueSeries.map(s => {
-        const pick = allPicks.find(pk => pk.user_id === p.id && pk.series_id === s.id)
-        cum += pick ? calcPoints(s.round, pick.picked_winner, s.result_winner, s.result_games, pick.picked_games) : -4
-        return cum
-      })
-      return {
-        name: p.id === currentUserId ? 'You' : p.full_name,
-        points, isMe: p.id === currentUserId,
-        color: p.id === currentUserId ? '#f97316' : COLORS[pi % COLORS.length]
-      }
-    })
-
-    const allVals = allData.flatMap(d => d.points)
-    const minV = Math.min(0, ...allVals)
-    const maxV = Math.max(0, ...allVals)
-    const range = maxV - minV || 1
-
-    function toX(i) { return PAD.left + (i / Math.max(leagueSeries.length - 1, 1)) * chartW }
-    function toY(v) { return PAD.top + chartH - ((v - minV) / range) * chartH }
-
-    ctx.clearRect(0, 0, W, H)
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-    ctx.lineWidth = 1
-    ;[0, 0.25, 0.5, 0.75, 1].forEach(t => {
-      const y = PAD.top + t * chartH
-      ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + chartW, y); ctx.stroke()
-    })
-
-    if (minV < 0) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)'
-      ctx.lineWidth = 1
-      const y0 = toY(0)
-      ctx.beginPath(); ctx.moveTo(PAD.left, y0); ctx.lineTo(PAD.left + chartW, y0); ctx.stroke()
-    }
-
-    ctx.fillStyle = 'rgba(255,255,255,0.35)'
-    ctx.font = '10px Barlow, sans-serif'
-    ctx.textAlign = 'right'
-    ;[0, 0.25, 0.5, 0.75, 1].forEach(t => {
-      const v = Math.round(minV + (1-t) * range)
-      ctx.fillText(v, PAD.left - 6, PAD.top + t * chartH + 4)
-    })
-
-    ctx.textAlign = 'center'
-    ctx.fillStyle = 'rgba(255,255,255,0.3)'
-    ctx.font = '9px Barlow, sans-serif'
-    leagueSeries.forEach((s, i) => {
-      ctx.save()
-      ctx.translate(toX(i), H - PAD.bottom + 14)
-      ctx.rotate(-Math.PI / 4)
-      ctx.textAlign = 'right'
-      ctx.fillText(s.home_team.split(' ').pop().slice(0,3).toUpperCase(), 0, 0)
-      ctx.restore()
-    })
-
-    allData.filter(d => !d.isMe).forEach(d => {
-      ctx.strokeStyle = d.color
-      ctx.lineWidth = 1.5
-      ctx.globalAlpha = 0.5
-      ctx.beginPath()
-      d.points.forEach((v, i) => { i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)) })
-      ctx.stroke()
-    })
-
-    const me = allData.find(d => d.isMe)
-    if (me) {
-      ctx.globalAlpha = 1
-      ctx.strokeStyle = '#f97316'
-      ctx.lineWidth = 3
-      ctx.beginPath()
-      me.points.forEach((v, i) => { i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)) })
-      ctx.stroke()
-      me.points.forEach((v, i) => {
-        ctx.beginPath(); ctx.arc(toX(i), toY(v), 3, 0, Math.PI * 2)
-        ctx.fillStyle = '#f97316'; ctx.fill()
-      })
-    }
-    ctx.globalAlpha = 1
-  }, [displayed, leagueSeries, allPicks])
-
-  if (leagueSeries.length === 0) return (
-    <div style={{ padding: '24px', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
-      No graded series yet. Chart will appear once results are entered.
-    </div>
-  )
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-        <button onClick={() => setShowAll(!showAll)} style={{ padding: '5px 12px', borderRadius: 6, background: showAll ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${showAll ? 'rgba(249,115,22,0.4)' : 'rgba(255,255,255,0.1)'}`, color: showAll ? '#f97316' : 'rgba(255,255,255,0.5)', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer' }}>
-          {showAll ? `Showing All ${sorted.length}` : 'Top 10 Only'}
-        </button>
-      </div>
-      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '12px 8px 8px', marginBottom: 12 }}>
-        <canvas ref={canvasRef} style={{ width: '100%', display: 'block' }} />
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
-        {displayed.map((p, i) => (
-          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 14, height: 3, borderRadius: 2, background: p.id === currentUserId ? '#f97316' : COLORS[i % COLORS.length] }} />
-            <span style={{ fontSize: 11, color: p.id === currentUserId ? '#f97316' : 'rgba(255,255,255,0.5)', fontWeight: p.id === currentUserId ? 700 : 400 }}>
-              {p.id === currentUserId ? 'You' : p.full_name}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function CrunchTimePage({ participants, allPicks, series, currentUser, league }) {
   const allSeriesFlat = [...(series.NHL || []), ...(series.NBA || [])]
 
@@ -1018,8 +963,13 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
   const cutoff = scored.length >= 15 ? scored[14].currentPts : -Infinity
   const displayed = scored.filter(p => p.currentPts >= cutoff)
 
-  // payoutCount: combined = 3, nhl/nba = 2
-  const payoutCount = league === 'combined' ? 3 : 2
+  // Enumerate win %
+  const projected = computeProjected(participants, allPicks, allSeriesFlat)
+  const leagueFilter = league === 'NHL' ? 'NHL' : league === 'NBA' ? 'NBA' : 'combined'
+  const projectedWithScores = projected.map((p, i) => ({ ...p, _idx: i }))
+  const winPcts = enumerateWinPct(projectedWithScores, allPicks, allSeriesFlat, leagueFilter)
+  const winPctMap = {}
+  projectedWithScores.forEach((p, i) => { winPctMap[p.id] = winPcts[i] })
 
   function getMedal(rank) {
     if (rank === 1) return '🥇'
@@ -1064,9 +1014,9 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
           const rank = i + 1
           const medal = getMedal(rank)
           const isMe = p.id === currentUser?.id
+          const leadPct = winPctMap[p.id] || 0
           return (
             <div key={p.id} style={{ ...rowStyle(isMe) }}>
-              {/* Top row: rank + name + score */}
               <div style={{ display: 'flex', alignItems: 'center', padding: '9px 12px 4px', gap: 8 }}>
                 <div style={{ width: 26, flexShrink: 0, fontSize: medal ? 17 : 13, color: rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)', lineHeight: 1 }}>
                   {medal || rank}
@@ -1077,13 +1027,20 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
                     {isMe && <span style={{ marginLeft: 5, fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, flexShrink: 0 }}>
-                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: p.currentPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.currentPts}</span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>→</span>
-                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: p.projPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.projPts}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: p.currentPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.currentPts}</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>→</span>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: p.projPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.projPts}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 6 }}>
+                    <div style={{ width: 32, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${leadPct}%`, background: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 30, textAlign: 'right' }}>{leadPct}%</span>
+                  </div>
                 </div>
               </div>
-              {/* NHL picks row */}
               {nhlActive.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', padding: '3px 12px 3px', gap: 6 }}>
                   <div style={{ width: 26, flexShrink: 0 }}></div>
@@ -1099,7 +1056,6 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
                   ))}
                 </div>
               )}
-              {/* NBA picks row */}
               {nbaActive.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', padding: '3px 12px 9px', gap: 6 }}>
                   <div style={{ width: 26, flexShrink: 0 }}></div>
@@ -1122,7 +1078,6 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
     )
   }
 
-  // NHL or NBA single league
   const activeLgSeries = league === 'NHL' ? nhlActive : nbaActive
 
   return (
@@ -1131,9 +1086,9 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
         const rank = i + 1
         const medal = getMedal(rank)
         const isMe = p.id === currentUser?.id
+        const leadPct = winPctMap[p.id] || 0
         return (
           <div key={p.id} style={{ ...rowStyle(isMe) }}>
-            {/* Top row: rank + name + score */}
             <div style={{ display: 'flex', alignItems: 'center', padding: '9px 12px 4px', gap: 8 }}>
               <div style={{ width: 26, flexShrink: 0, fontSize: medal ? 17 : 13, color: rank===1?'#f97316':rank===2?'#94a3b8':'rgba(255,255,255,0.2)', lineHeight: 1 }}>
                 {medal || rank}
@@ -1144,24 +1099,31 @@ function CrunchTimePage({ participants, allPicks, series, currentUser, league })
                   {isMe && <span style={{ marginLeft: 5, fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(249,115,22,0.2)', color: '#f97316', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>YOU</span>}
                 </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, flexShrink: 0 }}>
-                <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: p.currentPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.currentPts}</span>
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>→</span>
-                <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: p.projPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.projPts}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: p.currentPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.currentPts}</span>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>→</span>
+                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: p.projPts >= 0 ? '#6ee87a' : '#f87171' }}>{p.projPts}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 6 }}>
+                  <div style={{ width: 32, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${leadPct}%`, background: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                  </div>
+                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, color: leadPct >= 20 ? '#f97316' : leadPct >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 30, textAlign: 'right' }}>{leadPct}%</span>
+                </div>
               </div>
             </div>
-            {/* Picks row */}
             <div style={{ display: 'flex', alignItems: 'center', padding: '3px 12px 9px', gap: 6 }}>
               <div style={{ width: 26, flexShrink: 0 }}></div>
               {activeLgSeries.map((s, si) => (
-                    <Fragment key={s.id}>
-                      {si > 0 && <div style={{ width: 0.5, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0, margin: '0 4px' }} />}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
-                        <PickCell userId={p.id} s={s} />
-                      </div>
-                    </Fragment>
-                  ))}
+                <Fragment key={s.id}>
+                  {si > 0 && <div style={{ width: 0.5, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0, margin: '0 4px' }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 2, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.home_team.split(' ').pop()} vs {s.away_team.split(' ').pop()}</div>
+                    <PickCell userId={p.id} s={s} />
+                  </div>
+                </Fragment>
+              ))}
             </div>
           </div>
         )
@@ -1177,25 +1139,24 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
 
   const allSeriesFlat = [...(series.NHL || []), ...(series.NBA || [])]
   const lockedSeries = allSeriesFlat.filter(s => s.locked)
-  const remainingPts = calcRemainingPts(allSeriesFlat)
   const projected = computeProjected(participants, allPicks, allSeriesFlat)
-
-  const projectedWithChance = (() => {
-    const combinedChances = softmaxChance(projected, 'combinedProjected', remainingPts)
-    const nhlChances = softmaxChance(projected, 'nhlProjected', remainingPts)
-    const nbaChances = softmaxChance(projected, 'nbaProjected', remainingPts)
-    return projected.map((p, i) => ({
-      ...p,
-      chanceFirst: combinedChances[i],
-      nhlChanceFirst: nhlChances[i],
-      nbaChanceFirst: nbaChances[i],
-    }))
-  })()
 
   const isChart = view.startsWith('chart-')
   const isProj = view.startsWith('proj-')
   const isCrunch = view.startsWith('crunch-')
   const league = view.endsWith('nhl') ? 'nhl' : view.endsWith('nba') ? 'nba' : 'combined'
+
+  // Enumerate win % for each league view
+  const nhlWinPcts = enumerateWinPct(projected, allPicks, allSeriesFlat, 'NHL')
+  const nbaWinPcts = enumerateWinPct(projected, allPicks, allSeriesFlat, 'NBA')
+  const combinedWinPcts = enumerateWinPct(projected, allPicks, allSeriesFlat, 'combined')
+
+  const projectedWithChance = projected.map((p, i) => ({
+    ...p,
+    chanceFirst: combinedWinPcts[i],
+    nhlChanceFirst: nhlWinPcts[i],
+    nbaChanceFirst: nbaWinPcts[i],
+  }))
 
   const getSortKey = () => {
     if (isProj) return league === 'nhl' ? 'nhlProjected' : league === 'nba' ? 'nbaProjected' : 'combinedProjected'
@@ -1203,8 +1164,6 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
   }
 
   const sorted = [...projectedWithChance].sort((a, b) => (b[getSortKey()] || 0) - (a[getSortKey()] || 0))
-
-  // payout counts: combined = 3, nhl/nba = 2
   const payoutCount = league === 'combined' ? 3 : 2
 
   function getMedalForLeague(rank, lg) {
@@ -1224,11 +1183,6 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
       { key: 'proj-combined', label: 'Proj (ALL)' },
       { key: 'proj-nhl',      label: 'Proj (NHL)' },
       { key: 'proj-nba',      label: 'Proj (NBA)' },
-    ],
-    [
-      { key: 'chart-combined', label: 'Chart (ALL)' },
-      { key: 'chart-nhl',      label: 'Chart (NHL)' },
-      { key: 'chart-nba',      label: 'Chart (NBA)' },
     ],
     [
       { key: 'crunch-combined', label: '🔥 Crunch (ALL)' },
@@ -1254,7 +1208,7 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
     <div className="page">
       <div className="page-title">Standings</div>
       <div className="page-sub">
-        {isChart ? 'Cumulative score after each graded series.' : isProj ? 'Round projected score + chance of leading.' : isCrunch ? 'Top 15 · active picks + EV.' : 'Click a name to expand their picks.'}
+        {isProj ? 'Projected score + win probability.' : isCrunch ? 'Top 15 · active picks + EV + Lead%.' : 'Click a name to expand their picks.'}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginBottom: 16 }}>
@@ -1283,34 +1237,25 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
         />
       )}
 
-      {isChart && (
-        <CumulativeChart
-          participants={participants}
-          allPicks={allPicks}
-          allSeries={allSeriesFlat}
-          league={league === 'nhl' ? 'NHL' : league === 'nba' ? 'NBA' : 'combined'}
-          currentUserId={currentUser?.id}
-        />
-      )}
-
       {isProj && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
           <div style={{ display: 'flex', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 8 }}>
             <div style={{ width: 28, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>#</div>
             <div style={{ flex: 1, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Name</div>
-            <div style={{ width: 80, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Proj</div>
+            <div style={{ width: 100, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Pts → Proj</div>
             <div style={{ width: 64, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Lead%</div>
           </div>
           {sorted.map((p, i) => {
             const rank = i + 1
             const medal = getMedalForLeague(rank, league)
+            const currentScore = league === 'nhl' ? p.nhlTotal : league === 'nba' ? p.nbaTotal : p.combined
             const proj = league === 'nhl' ? p.nhlProjected : league === 'nba' ? p.nbaProjected : p.combinedProjected
             const chance = league === 'nhl' ? p.nhlChanceFirst : league === 'nba' ? p.nbaChanceFirst : p.chanceFirst
             const isMe = p.id === currentUser?.id
             const isExpanded = expandedId === p.id
             const playerLockedSeries = lockedSeries.filter(s => league === 'combined' || s.league === league.toUpperCase())
             const rounds = [...new Set(playerLockedSeries.map(s => s.round))].sort((a,b) => b-a)
-            const maxRound = Math.max(...rounds, 1)
+            const maxRound = rounds[0] || 1
             const rankColor = rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)'
 
             return (
@@ -1329,12 +1274,18 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                     </div>
                     <div style={{ fontSize: 10, color: isExpanded ? '#f97316' : 'rgba(255,255,255,0.25)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>{isExpanded ? 'HIDE ▲' : 'PICKS ▼'}</div>
                   </div>
-                  <div style={{ width: 80, textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 700, color: proj >= 0 ? '#6ee87a' : '#f87171', flexShrink: 0 }}>{proj}</div>
-                  <div style={{ width: 64, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexShrink: 0 }}>
-                    <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                  <div style={{ width: 100, textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, justifyContent: 'flex-end' }}>
+                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 700, color: currentScore >= 0 ? '#6ee87a' : '#f87171' }}>{currentScore}</span>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>→</span>
+                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: proj >= 0 ? '#6ee87a' : '#f87171' }}>{proj}</span>
                     </div>
-                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 10 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
+                  </div>
+                  <div style={{ width: 64, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5, flexShrink: 0 }}>
+                    <div style={{ width: 32, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${chance}%`, background: chance >= 20 ? '#f97316' : chance >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color: chance >= 20 ? '#f97316' : chance >= 5 ? '#60a5fa' : 'rgba(255,255,255,0.4)', minWidth: 28, textAlign: 'right' }}>{chance}%</span>
                   </div>
                 </div>
                 {isExpanded && (
@@ -1391,7 +1342,7 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
         </div>
       )}
 
-      {!isChart && !isProj && !isCrunch && (
+      {!isProj && !isCrunch && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -1416,11 +1367,11 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                 const rankColor = rank===1?'#f97316':rank===2?'#94a3b8':rank===3?'#b87333':'rgba(255,255,255,0.2)'
                 const playerLockedSeries = lockedSeries.filter(s => league === 'combined' || s.league === league.toUpperCase())
                 const rounds = [...new Set(playerLockedSeries.map(s => s.round))].sort((a,b) => b-a)
-                const maxRound = Math.max(...rounds, 1)
+                const maxRound = rounds[0] || 1
 
                 return (
-                  <>
-                    <tr key={p.id} onClick={() => { setExpandedId(isExpanded ? null : p.id); setExpandedRounds({}) }}
+                  <Fragment key={p.id}>
+                    <tr onClick={() => { setExpandedId(isExpanded ? null : p.id); setExpandedRounds({}) }}
                       style={{ cursor: 'pointer', background: isExpanded ? 'rgba(249,115,22,0.06)' : isPayout ? 'rgba(249,115,22,0.03)' : isMe ? 'rgba(249,115,22,0.02)' : 'transparent', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)' }}>
                       <td style={{ padding: '11px 12px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: medal ? 18 : 13, color: rankColor, lineHeight: 1 }}>{medal || rank}</td>
                       <td style={{ padding: '11px 12px' }}>
@@ -1438,7 +1389,7 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                       <td style={{ padding: '11px 12px', textAlign: 'right', fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 700, color: score >= 0 ? '#6ee87a' : '#f87171' }}>{score}</td>
                     </tr>
                     {isExpanded && (
-                      <tr key={`${p.id}-exp`}>
+                      <tr>
                         <td colSpan={league === 'combined' ? 5 : 3} style={{ padding: '0 0 8px', background: 'rgba(249,115,22,0.03)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                           {rounds.map(r => {
                             const rOpen = isRoundExpanded(p.id, r, maxRound)
@@ -1483,7 +1434,7 @@ function StandingsPage({ participants, allPicks, series, currentUser }) {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -1662,7 +1613,7 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
             </div>
           )}
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 14, lineHeight: 1.6 }}>
-            Enter DraftKings Series Correct Score American odds for each active series. Leave fields blank for impossible outcomes.
+            Enter DraftKings Series Correct Score American odds for each active series.
           </div>
           {allSeries.filter(s => s.locked && !s.result_winner).map(s => {
             const css = s.series_correct_score || {}
@@ -1707,14 +1658,12 @@ function AdminPage({ series, toggleLock, enterResult, participants, allPicks, sh
                     return (
                       <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', minWidth: 72 }}>{field.label}</span>
-                        <input
-                          type="text" placeholder="e.g. +230"
+                        <input type="text" placeholder="e.g. +230"
                           onChange={e => {
                             const p = americanToProb(e.target.value)
                             if (p !== null) setOddsField(s.id, field.key, p)
                           }}
-                          style={{ ...inputStyle, flex: 1 }}
-                        />
+                          style={{ ...inputStyle, flex: 1 }} />
                         {prob && <span style={{ fontSize: 10, color: '#f97316', minWidth: 28 }}>{prob}</span>}
                       </div>
                     )
